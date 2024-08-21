@@ -137,9 +137,6 @@ partition_disk() {
 encrypt_partition() {
     local disk="$DISK"
     local luks_partition
-    local encryption_password
-    local confirm_encryption_password
-    local attempts=0
 
     if [[ -z "$disk" ]]; then
         log "Hata: Disk değişkeni tanımlanmamış."
@@ -153,30 +150,30 @@ encrypt_partition() {
         luks_partition="${disk}2"
     fi
 
-    while [[ $attempts -lt 3 ]]; do
-        # Kullanıcıdan şifreyi al
-        read -s -p "Şifreleme için yeni şifre girin: " encryption_password
+    # TTY üzerinden şifre almak için:
+    if [[ -t 1 ]]; then
+        # Doğrudan terminalden şifre alma (TTY kullanarak)
+        read -s -p "Şifreleme için yeni şifre girin: " encryption_password < /dev/tty
         echo
-        read -s -p "Şifreleme şifrenizi tekrar girin: " confirm_encryption_password
+        read -s -p "Şifreleme şifrenizi tekrar girin: " confirm_encryption_password < /dev/tty
         echo
+    else
+        printf "${RED}Hata: TTY üzerinden şifre girişi yapılamadı.${RESET}\n" >&2
+        return 1
+    fi
 
-        if [[ "$encryption_password" == "$confirm_encryption_password" ]]; then
-            echo "$encryption_password" | cryptsetup --type luks1 -v -y luksFormat "$luks_partition"
-            echo "$encryption_password" | cryptsetup open "$luks_partition" cryptdev --key-file -
-            log "Bölüm LUKS1 ile şifrelendi ve açıldı."
-            printf "${GREEN}Bölüm LUKS1 ile şifrelendi ve açıldı.${RESET}\n"
-            return
-        else
-            log "Hata: Şifreler eşleşmiyor. Tekrar deneyin."
-            printf "${RED}Hata: Şifreler eşleşmiyor. Tekrar deneyin.${RESET}\n"
-            ((attempts++))
-        fi
-    done
-
-    log "Hata: 3 kez şifre eşleşmesi sağlanamadı. Script durduruluyor."
-    printf "${RED}Hata: 3 kez şifre eşleşmesi sağlanamadı. Script durduruluyor.${RESET}\n"
-    exit 1
+    if [[ "$encryption_password" == "$confirm_encryption_password" ]]; then
+        echo "$encryption_password" | cryptsetup --type luks1 -v -y luksFormat "$luks_partition"
+        echo "$encryption_password" | cryptsetup open "$luks_partition" cryptdev --key-file -
+        log "Bölüm LUKS1 ile şifrelendi ve açıldı."
+        printf "${GREEN}Bölüm LUKS1 ile şifrelendi ve açıldı.${RESET}\n"
+    else
+        log "Hata: Şifreler eşleşmiyor. Tekrar deneyin."
+        printf "${RED}Hata: Şifreler eşleşmiyor. Tekrar deneyin.${RESET}\n"
+        return 1
+    fi
 }
+
 
 # 1.11 Bölümleri formatla
 format_partitions() {
