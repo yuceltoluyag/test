@@ -134,7 +134,6 @@ partition_disk() {
 }
 
 
-# Bölümü şifrele
 encrypt_partition() {
     local disk="$DISK"
     local luks_partition
@@ -162,10 +161,10 @@ encrypt_partition() {
         echo
 
         if [[ "$encryption_password" == "$confirm_encryption_password" ]]; then
-            echo "$encryption_password" | cryptsetup luksFormat "$luks_partition"
-            echo "$encryption_password" | cryptsetup open "$luks_partition" --type luks --key-file -
-            log "Bölüm şifrelendi ve açıldı."
-            printf "${GREEN}Bölüm şifrelendi ve açıldı.${RESET}\n"
+            echo "$encryption_password" | cryptsetup --type luks1 -v -y luksFormat "$luks_partition"
+            echo "$encryption_password" | cryptsetup open "$luks_partition" cryptdev --key-file -
+            log "Bölüm LUKS1 ile şifrelendi ve açıldı."
+            printf "${GREEN}Bölüm LUKS1 ile şifrelendi ve açıldı.${RESET}\n"
             return
         else
             log "Hata: Şifreler eşleşmiyor. Tekrar deneyin."
