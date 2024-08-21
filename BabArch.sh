@@ -346,8 +346,8 @@ set_locale() {
 # 2.4 Konsol fontu ve klavye düzeni ayarla
 set_console_font_and_keymap() {
     printf "${GREEN}Konsol fontu ve klavye düzeni ayarlanıyor...${RESET}\n"
-    echo "FONT=ter-v24n" > /etc/vconsole.conf
-    echo "KEYMAP=colemak" >> /etc/vconsole.conf
+    echo "FONT=ter-v24b" > /etc/vconsole.conf
+    echo "KEYMAP=trq" >> /etc/vconsole.conf
 }
 
 # 2.5 Varsayılan editörü ayarla
@@ -519,7 +519,7 @@ check_internet() {
 # Klavye ve font ayarları
 setup_keyboard_and_font() {
     loadkeys trq
-    setfont ter-d22b
+    setfont ter-v24b
     printf "${GREEN}Klavye düzeni ve font ayarlandı.${RESET}\n"
 }
 
