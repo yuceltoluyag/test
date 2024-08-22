@@ -166,10 +166,14 @@ format_partitions() {
 
 # Kök bölümü montajla
 mount_root_device() {
-    printf "${GREEN}Kök bölümü /mnt dizinine bağlanıyor...${RESET}\n"
-    if ! mount /dev/mapper/cryptdev /mnt; then
-        printf "${RED}Hata: Kök bölümü bağlanamadı.${RESET}\n" >&2
-        return 1
+    if mountpoint -q /mnt; then
+        printf "${GREEN}Kök bölümü zaten montajlanmış.${RESET}\n"
+    else
+        printf "${GREEN}Kök bölümü /mnt dizinine bağlanıyor...${RESET}\n"
+        if ! mount /dev/mapper/cryptdev /mnt; then
+            printf "${RED}Hata: Kök bölümü bağlanamadı.${RESET}\n" >&2
+            return 1
+        fi
     fi
 }
 
@@ -189,20 +193,45 @@ create_btrfs_subvolumes() {
 mount_btrfs_subvolumes() {
     local sv_opts="rw,noatime,compress-force=zstd:1,space_cache=v2"
     
-    printf "${GREEN}Kök bölümü yeniden bağlanıyor...${RESET}\n"
-    umount /mnt
-    mount -o ${sv_opts},subvol=@ /dev/mapper/cryptdev /mnt
+    # Kök bölümün doğru montajlandığından emin olun
+    if ! mountpoint -q /mnt; then
+        printf "${RED}Hata: Kök bölümü montajlanmamış.${RESET}\n" >&2
+        return 1
+    fi
 
-    mkdir -p /mnt/{home,.snapshots,var/cache,var/lib/libvirt,var/log,var/tmp}
+    printf "${GREEN}BTRFS alt birimleri montajlanıyor...${RESET}\n"
+    
+    if ! mountpoint -q /mnt/home; then
+        mkdir -p /mnt/home
+        mount -o ${sv_opts},subvol=@home /dev/mapper/cryptdev /mnt/home
+    fi
 
-    printf "${GREEN}Alt birimler bağlanıyor...${RESET}\n"
-    mount -o ${sv_opts},subvol=@home /dev/mapper/cryptdev /mnt/home
-    mount -o ${sv_opts},subvol=@snapshots /dev/mapper/cryptdev /mnt/.snapshots
-    mount -o ${sv_opts},subvol=@cache /dev/mapper/cryptdev /mnt/var/cache
-    mount -o ${sv_opts},subvol=@libvirt /dev/mapper/cryptdev /mnt/var/lib/libvirt
-    mount -o ${sv_opts},subvol=@log /dev/mapper/cryptdev /mnt/var/log
-    mount -o ${sv_opts},subvol=@tmp /dev/mapper/cryptdev /mnt/var/tmp
+    if ! mountpoint -q /mnt/.snapshots; then
+        mkdir -p /mnt/.snapshots
+        mount -o ${sv_opts},subvol=@snapshots /dev/mapper/cryptdev /mnt/.snapshots
+    fi
+
+    if ! mountpoint -q /mnt/var/cache; then
+        mkdir -p /mnt/var/cache
+        mount -o ${sv_opts},subvol=@cache /dev/mapper/cryptdev /mnt/var/cache
+    fi
+
+    if ! mountpoint -q /mnt/var/lib/libvirt; then
+        mkdir -p /mnt/var/lib/libvirt
+        mount -o ${sv_opts},subvol=@libvirt /dev/mapper/cryptdev /mnt/var/lib/libvirt
+    fi
+
+    if ! mountpoint -q /mnt/var/log; then
+        mkdir -p /mnt/var/log
+        mount -o ${sv_opts},subvol=@log /dev/mapper/cryptdev /mnt/var/log
+    fi
+
+    if ! mountpoint -q /mnt/var/tmp; then
+        mkdir -p /mnt/var/tmp
+        mount -o ${sv_opts},subvol=@tmp /dev/mapper/cryptdev /mnt/var/tmp
+    fi
 }
+
 
 # ESP bölümünü montajla
 mount_esp_partition() {
@@ -216,6 +245,10 @@ mount_esp_partition() {
     fi
 
     printf "${GREEN}ESP bölümü /mnt/efi dizinine bağlanıyor...${RESET}\n"
-    mkdir -p /mnt/efi
-    mount "$esp_partition" /mnt/efi
+    if ! mountpoint -q /mnt/efi; then
+        mkdir -p /mnt/efi
+        mount "$esp_partition" /mnt/efi
+    else
+        printf "${GREEN}ESP bölümü zaten montajlanmış.${RESET}\n"
+    fi
 }
