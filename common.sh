@@ -69,3 +69,43 @@ check_required_packages() {
         printf "${GREEN}Gerekli tüm paketler zaten yüklü.${RESET}\n"
     fi
 }
+
+check_uefi() {
+    if [[ ! -d /sys/firmware/efi/efivars ]]; then
+        printf "${RED}Bu sistem UEFI değil. Kurulum durduruluyor.${RESET}\n" >&2
+        exit 1
+    fi
+    printf "${GREEN}UEFI modu tespit edildi.${RESET}\n"
+}
+
+
+# İnternet bağlantı kontrolü
+check_internet() {
+    if ! ping -c 1 archlinux.org &>/dev/null; then
+        printf "${RED}İnternet bağlantısı yok. Kurulum durduruluyor.${RESET}\n" >&2
+        exit 1
+    fi
+    printf "${GREEN}İnternet bağlantısı tespit edildi.${RESET}\n"
+}
+
+# Microcode kontrolü
+check_microcode() {
+    if grep -q "GenuineIntel" /proc/cpuinfo; then
+        export MICROCODE="intel-ucode"
+        printf "${GREEN}Intel mikrocode seçildi.${RESET}\n"
+    elif grep -q "AuthenticAMD" /proc/cpuinfo; then
+        export MICROCODE="amd-ucode"
+        printf "${GREEN}AMD mikrocode seçildi.${RESET}\n"
+    else
+        printf "${RED}Desteklenmeyen CPU üreticisi. Kurulum durduruluyor.${RESET}\n" >&2
+        exit 1
+    fi
+}
+
+# Sistem saatini güncelle
+update_system_clock() {
+    log "Sistem saati güncelleniyor..."
+    printf "${GREEN}Sistem saati güncelleniyor...${RESET}\n"
+    timedatectl set-ntp true
+    timedatectl status
+}
