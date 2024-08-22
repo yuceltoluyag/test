@@ -137,6 +137,8 @@ partition_disk() {
 encrypt_partition() {
     local disk="$DISK"
     local luks_partition
+    local password="minel"
+    local password_file="/root/sifre.txt"
 
     if [[ -z "$disk" ]]; then
         log "Hata: Disk değişkeni tanımlanmamış."
@@ -150,30 +152,36 @@ encrypt_partition() {
         luks_partition="${disk}2"
     fi
 
-    # TTY üzerinden şifre almak için:
-    if [[ -t 1 ]]; then
-        # Doğrudan terminalden şifre alma (TTY kullanarak)
-        read -s -p "Şifreleme için yeni şifre girin: " encryption_password < /dev/tty
-        echo
-        read -s -p "Şifreleme şifrenizi tekrar girin: " confirm_encryption_password < /dev/tty
-        echo
+    # Eğer dosya yoksa oluştur ve içine "minel" yaz
+    if [[ ! -f "$password_file" ]]; then
+        echo "$password" > "$password_file"
+        log "$password_file dosyası oluşturuldu ve şifre yazıldı."
+    fi
+
+    # LUKS formatını gerçekleştir ve şifreyi dosyadan al
+    if cryptsetup --type luks1 -v luksFormat "$luks_partition" -d "$password_file"; then
+        log "Bölüm LUKS1 ile şifrelendi."
+        printf "${GREEN}Bölüm LUKS1 ile şifrelendi.${RESET}\n"
     else
-        printf "${RED}Hata: TTY üzerinden şifre girişi yapılamadı.${RESET}\n" >&2
+        log "Hata: LUKS formatlama başarısız."
+        printf "${RED}Hata: LUKS formatlama başarısız.${RESET}\n" >&2
         return 1
     fi
 
-    if [[ "$encryption_password" == "$confirm_encryption_password" ]]; then
-        echo "$encryption_password" | cryptsetup --type luks1 -v -y luksFormat "$luks_partition"
-        echo "$encryption_password" | cryptsetup open "$luks_partition" cryptdev --key-file -
-        log "Bölüm LUKS1 ile şifrelendi ve açıldı."
-        printf "${GREEN}Bölüm LUKS1 ile şifrelendi ve açıldı.${RESET}\n"
+    # Şifreli bölümü aç
+    if cryptsetup open "$luks_partition" cryptdev -d "$password_file"; then
+        log "Bölüm başarıyla açıldı."
+        printf "${GREEN}Bölüm başarıyla açıldı.${RESET}\n"
     else
-        log "Hata: Şifreler eşleşmiyor. Tekrar deneyin."
-        printf "${RED}Hata: Şifreler eşleşmiyor. Tekrar deneyin.${RESET}\n"
+        log "Hata: Bölüm açma başarısız."
+        printf "${RED}Hata: Bölüm açma başarısız.${RESET}\n" >&2
         return 1
     fi
+
+    # Şifre dosyasını sil
+    rm -f "$password_file"
+    log "$password_file dosyası silindi."
 }
-
 
 # 1.11 Bölümleri formatla
 format_partitions() {
