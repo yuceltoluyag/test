@@ -1,5 +1,18 @@
 #!/bin/bash
 set -e
+
+GREEN='\e[32m'
+YELLOW='\e[33m'
+RED='\e[31m'
+RESET='\e[0m'
+
+
+log() {
+    local message="$1"
+    echo "$(date +'%Y-%m-%d %H:%M:%S') - ${message}" >> /var/log/disk_setup.log
+}
+
+
 # 2.1 Zaman dilimini ayarla
 set_timezone() {
     printf "${GREEN}Zaman dilimi İstanbul olarak ayarlanıyor...${RESET}\n"
