@@ -163,6 +163,7 @@ encrypt_partition() {
 
     # LUKS formatını gerçekleştir (şifre kullanıcıdan manuel alınacak)
     if cryptsetup --type luks1 -v -y luksFormat "$luks_partition"; then
+        echo "minel" | sudo cryptsetup --type luks1 -v luksFormat "$luks_partition"
         log "Bölüm LUKS1 ile şifrelendi."
         printf "${GREEN}Bölüm LUKS1 ile şifrelendi.${RESET}\n"
     else
