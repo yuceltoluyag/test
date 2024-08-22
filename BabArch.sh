@@ -305,9 +305,12 @@ generate_fstab() {
 # 2. Sistemi yapılandır: Chroot
 configure_system() {
     printf "${GREEN}Sisteme chroot yapılıyor ve yapılandırma başlatılıyor...${RESET}\n"
+    cp /root/test/setup_chroot.sh /mnt/setup_chroot.sh
+    chmod +x /mnt/setup_chroot.sh
     arch-chroot /mnt /bin/bash /setup_chroot.sh
-    rm /mnt/setup_chroot.sh  # Kurulum tamamlandıktan sonra geçici script'i silebilirsiniz
+    rm /mnt/setup_chroot.sh
 }
+
 
 # 2.14 Chroot'tan çık ve yeniden başlat
 reboot_system() {
