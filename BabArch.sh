@@ -186,7 +186,6 @@ encrypt_partition() {
 
 
 
-# 1.11 Bölümleri formatla
 format_partitions() {
     local disk="$DISK"
     local luks_partition esp_partition
@@ -205,7 +204,9 @@ format_partitions() {
     fi
 
     printf "${GREEN}Şifreli bölüm açılıyor...${RESET}\n"
-    if ! cryptsetup open "$luks_partition" cryptdev; then
+    if cryptsetup open "$luks_partition" cryptdev; then
+        printf "${GREEN}Bölüm başarıyla açıldı.${RESET}\n"
+    else
         printf "${RED}Hata: LUKS bölümü açılamadı.${RESET}\n" >&2
         return 1
     fi
