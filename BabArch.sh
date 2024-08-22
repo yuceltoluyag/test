@@ -1,5 +1,6 @@
 #!/bin/bash
 set -euo pipefail
+export LUKS_PASSWORD="minel"
 
 # Renk kodları
 YELLOW='\e[33m'
@@ -161,9 +162,8 @@ encrypt_partition() {
         return 1
     fi
 
-    # LUKS formatını gerçekleştir (şifre kullanıcıdan manuel alınacak)
-    if cryptsetup --type luks1 -v -y luksFormat "$luks_partition"; then
-        echo "minel" | sudo cryptsetup --type luks1 -v luksFormat "$luks_partition"
+    # LUKS formatını gerçekleştir (şifre çevre değişkeninden alınacak)
+    if echo "$LUKS_PASSWORD" | sudo cryptsetup --type luks1 -v luksFormat "$luks_partition"; then
         log "Bölüm LUKS1 ile şifrelendi."
         printf "${GREEN}Bölüm LUKS1 ile şifrelendi.${RESET}\n"
     else
@@ -172,6 +172,7 @@ encrypt_partition() {
         return 1
     fi
 }
+
 
 
 
@@ -303,9 +304,24 @@ generate_fstab() {
 
 # 2. Sistemi yapılandır: Chroot
 configure_system() {
-    printf "${GREEN}Sisteme chroot yapılıyor...${RESET}\n"
-    arch-chroot /mnt /bin/bash
+    printf "${GREEN}Sisteme chroot yapılıyor ve yapılandırma başlatılıyor...${RESET}\n"
+    arch-chroot /mnt /bin/bash <<EOF
+set_timezone
+set_hostname
+set_locale
+set_console_font_and_keymap
+set_default_editor
+set_root_password
+create_user
+enable_networkmanager
+enable_sshd
+configure_keyfile
+configure_mkinitcpio
+install_grub
+install_boot_loader
+EOF
 }
+
 
 # 2.1 Zaman dilimini ayarla
 set_timezone() {
@@ -570,19 +586,7 @@ main() {
     install_base_system
     generate_fstab
     configure_system
-    set_timezone
-    set_hostname
-    set_locale
-    set_console_font_and_keymap
-    set_default_editor
-    set_root_password
-    create_user
-    enable_networkmanager
-    enable_sshd
-    configure_keyfile
-    configure_mkinitcpio
-    install_grub
-    install_boot_loader
+  
 
     printf "${GREEN}Kurulum tamamlandı, sistem yeniden başlatılıyor...${RESET}\n"
     reboot_system
