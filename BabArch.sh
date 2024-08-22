@@ -137,8 +137,6 @@ partition_disk() {
 encrypt_partition() {
     local disk="$DISK"
     local luks_partition
-    local password="minel"
-    local password_file="/root/sifre.txt"
 
     if [[ -z "$disk" ]]; then
         log "Hata: Disk değişkeni tanımlanmamış."
@@ -152,12 +150,6 @@ encrypt_partition() {
         luks_partition="${disk}2"
     fi
 
-    # Eğer dosya yoksa oluştur ve içine "minel" yaz
-    if [[ ! -f "$password_file" ]]; then
-        echo "$password" > "$password_file"
-        log "$password_file dosyası oluşturuldu ve şifre yazıldı."
-    fi
-
     # Kullanıcıdan onay al
     printf "${YELLOW}Bu işlem tüm verileri kalıcı olarak silecek. Devam etmek istiyor musunuz? (yes/YES): ${RESET}"
     read -r confirmation
@@ -169,8 +161,8 @@ encrypt_partition() {
         return 1
     fi
 
-    # LUKS formatını gerçekleştir ve şifreyi dosyadan al
-    if cryptsetup --type luks1 -v -y luksFormat "$luks_partition" -d "$password_file"; then
+    # LUKS formatını gerçekleştir (şifre kullanıcıdan manuel alınacak)
+    if cryptsetup --type luks1 -v -y luksFormat "$luks_partition"; then
         log "Bölüm LUKS1 ile şifrelendi."
         printf "${GREEN}Bölüm LUKS1 ile şifrelendi.${RESET}\n"
     else
@@ -178,11 +170,8 @@ encrypt_partition() {
         printf "${RED}Hata: LUKS formatlama başarısız.${RESET}\n" >&2
         return 1
     fi
-
-    # Şifre dosyasını sil
-    rm -f "$password_file"
-    log "$password_file dosyası silindi."
 }
+
 
 
 
@@ -204,10 +193,8 @@ format_partitions() {
     fi
 
     printf "${GREEN}Şifreli bölüm açılıyor...${RESET}\n"
-    if cryptsetup open "$luks_partition" cryptdev; then
-        printf "${GREEN}Bölüm başarıyla açıldı.${RESET}\n"
-    else
-        printf "${RED}Hata: LUKS bölümü açılamadı.${RESET}\n" >&2
+    if ! cryptsetup open "$luks_partition" cryptdev; then
+        printf "${RED}Hata: LUKS bölümü açılamadı. Şifreyi doğru girdiğinizden emin olun.${RESET}\n" >&2
         return 1
     fi
 
@@ -217,6 +204,7 @@ format_partitions() {
     printf "${GREEN}Kök bölümü BTRFS olarak formatlanıyor...${RESET}\n"
     mkfs.btrfs -L archlinux /dev/mapper/cryptdev
 }
+
 
 # 1.12 Kök bölümünü bağla
 mount_root_device() {
