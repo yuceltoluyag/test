@@ -158,6 +158,13 @@ encrypt_partition() {
         log "$password_file dosyası oluşturuldu ve şifre yazıldı."
     fi
 
+    # Önceden açık olan şifreli bölümü kapat
+    if cryptsetup status cryptdev &>/dev/null; then
+        printf "${YELLOW}Önceden açık olan şifreli bölüm kapatılıyor...${RESET}\n"
+        cryptsetup close cryptdev
+        log "Önceden açık olan şifreli bölüm kapatıldı."
+    fi
+
     # Kullanıcıdan onay al
     printf "${YELLOW}Bu işlem tüm verileri kalıcı olarak silecek. Devam etmek istiyor musunuz? (yes/YES): ${RESET}"
     read -r confirmation
@@ -179,20 +186,14 @@ encrypt_partition() {
         return 1
     fi
 
-    # Şifreli bölümü açmadan önce kontrol et
-    if cryptsetup status cryptdev &>/dev/null; then
-        log "Bölüm zaten açık, yeniden açmaya gerek yok."
-        printf "${YELLOW}Bölüm zaten açık, yeniden açmaya gerek yok.${RESET}\n"
+    # Şifreli bölümü aç
+    if cryptsetup open "$luks_partition" cryptdev -d "$password_file"; then
+        log "Bölüm başarıyla açıldı."
+        printf "${GREEN}Bölüm başarıyla açıldı.${RESET}\n"
     else
-        # Şifreli bölümü aç
-        if cryptsetup open "$luks_partition" cryptdev -d "$password_file"; then
-            log "Bölüm başarıyla açıldı."
-            printf "${GREEN}Bölüm başarıyla açıldı.${RESET}\n"
-        else
-            log "Hata: Bölüm açma başarısız."
-            printf "${RED}Hata: Bölüm açma başarısız.${RESET}\n" >&2
-            return 1
-        fi
+        log "Hata: Bölüm açma başarısız."
+        printf "${RED}Hata: Bölüm açma başarısız.${RESET}\n" >&2
+        return 1
     fi
 
     # Şifre dosyasını sil
