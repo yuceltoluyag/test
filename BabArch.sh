@@ -1,6 +1,7 @@
 #!/bin/bash
 set -euo pipefail
 source ./common.sh  # Ortak fonksiyon ve değişkenleri dahil et
+source ./disk_setup.sh
 
 # Mevcut sistemde disklerin doğru biçimlendirilip biçimlendirilmediğini kontrol eden fonksiyon
 check_existing_setup() {
