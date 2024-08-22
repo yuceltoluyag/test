@@ -269,6 +269,11 @@ synchronize_package_databases() {
     pacman -Syy
 }
 
+generate_mirrorlist() {
+    printf "${GREEN}Yansılar güncelleniyor...${RESET}\n"
+    reflector --verbose --protocol https --latest 5 --sort rate --country Germany --save /etc/pacman.d/mirrorlist
+}
+
 # Microcode kontrolü
 check_microcode() {
     if grep -q "GenuineIntel" /proc/cpuinfo; then
@@ -307,7 +312,6 @@ set_timezone() {
     printf "${GREEN}Zaman dilimi İstanbul olarak ayarlanıyor...${RESET}\n"
     ln -sf /usr/share/zoneinfo/Europe/Istanbul /etc/localtime
     hwclock --systohc
-    reflector --verbose --protocol https --latest 5 --sort rate  --country Germany --save /etc/pacman.d/mirrorlist
 
 }
 
