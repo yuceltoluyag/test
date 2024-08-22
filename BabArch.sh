@@ -8,9 +8,9 @@ check_existing_setup() {
     # /mnt dizininin dolu olup olmadığını kontrol et
     if mountpoint -q /mnt && [ "$(ls -A /mnt)" ]; then
         echo "Diskler zaten bağlanmış görünüyor ve /mnt dizini dolu."
-        
-        # /mnt/etc/fstab dosyasının olup olmadığını ve içeriğinin doğru olup olmadığını kontrol et
-        if [ -f /mnt/etc/fstab ] && grep -q "/mnt" /mnt/etc/fstab; then
+
+        # /mnt/etc/fstab dosyasının olup olmadığını ve doğru Btrfs alt birimlerini içerip içermediğini kontrol et
+        if [ -f /mnt/etc/fstab ] && grep -q "subvol=@" /mnt/etc/fstab; then
             echo "/mnt/etc/fstab dosyası doğru oluşturulmuş."
             return 0  # Her şey doğru ise 0 (başarı) döndür
         else
@@ -41,7 +41,7 @@ main() {
         # Disk işlemleri ve kurulum süreci burada devam edecek
         update_system_clock
         set_disk_variable
-        wipe_disk
+        wipe_disk  # Sadece diskler doğru değilse bu işlem yapılacak
         partition_disk
         encrypt_partition
         format_partitions
