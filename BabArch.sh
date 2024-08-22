@@ -186,20 +186,27 @@ encrypt_partition() {
         return 1
     fi
 
-    # Şifreli bölümü aç
-    if cryptsetup open "$luks_partition" cryptdev -d "$password_file"; then
-        log "Bölüm başarıyla açıldı."
-        printf "${GREEN}Bölüm başarıyla açıldı.${RESET}\n"
+    # Şifreli bölümü açmadan önce kontrol et
+    if cryptsetup status cryptdev &>/dev/null; then
+        log "Bölüm zaten açık, yeniden açmaya gerek yok."
+        printf "${YELLOW}Bölüm zaten açık, yeniden açmaya gerek yok.${RESET}\n"
     else
-        log "Hata: Bölüm açma başarısız."
-        printf "${RED}Hata: Bölüm açma başarısız.${RESET}\n" >&2
-        return 1
+        # Şifreli bölümü aç
+        if cryptsetup open "$luks_partition" cryptdev -d "$password_file"; then
+            log "Bölüm başarıyla açıldı."
+            printf "${GREEN}Bölüm başarıyla açıldı.${RESET}\n"
+        else
+            log "Hata: Bölüm açma başarısız."
+            printf "${RED}Hata: Bölüm açma başarısız.${RESET}\n" >&2
+            return 1
+        fi
     fi
 
     # Şifre dosyasını sil
     rm -f "$password_file"
     log "$password_file dosyası silindi."
 }
+
 
 # 1.11 Bölümleri formatla
 format_partitions() {
