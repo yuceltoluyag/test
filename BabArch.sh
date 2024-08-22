@@ -158,8 +158,19 @@ encrypt_partition() {
         log "$password_file dosyası oluşturuldu ve şifre yazıldı."
     fi
 
-    # LUKS formatını gerçekleştir ve şifreyi dosyadan al
-    if cryptsetup --type luks1 -v luksFormat "$luks_partition" -d "$password_file"; then
+    # Kullanıcıdan onay al
+    printf "${YELLOW}Bu işlem tüm verileri kalıcı olarak silecek. Devam etmek istiyor musunuz? (yes/YES): ${RESET}"
+    read -r confirmation
+
+    # Onay kontrolü (yes veya YES kabul edilir)
+    if [[ "${confirmation,,}" != "yes" ]]; then
+        log "İşlem iptal edildi."
+        printf "${RED}İşlem iptal edildi.${RESET}\n"
+        return 1
+    fi
+
+    # LUKS formatını gerçekleştir ve şifreyi dosyadan al (batch-mode ile onayı otomatik geç)
+    if cryptsetup --batch-mode --type luks1 -v luksFormat "$luks_partition" -d "$password_file"; then
         log "Bölüm LUKS1 ile şifrelendi."
         printf "${GREEN}Bölüm LUKS1 ile şifrelendi.${RESET}\n"
     else
@@ -168,14 +179,20 @@ encrypt_partition() {
         return 1
     fi
 
-    # Şifreli bölümü aç
-    if cryptsetup open "$luks_partition" cryptdev -d "$password_file"; then
-        log "Bölüm başarıyla açıldı."
-        printf "${GREEN}Bölüm başarıyla açıldı.${RESET}\n"
+    # Şifreli bölümü açmadan önce kontrol et
+    if cryptsetup status cryptdev &>/dev/null; then
+        log "Bölüm zaten açık, yeniden açmaya gerek yok."
+        printf "${YELLOW}Bölüm zaten açık, yeniden açmaya gerek yok.${RESET}\n"
     else
-        log "Hata: Bölüm açma başarısız."
-        printf "${RED}Hata: Bölüm açma başarısız.${RESET}\n" >&2
-        return 1
+        # Şifreli bölümü aç
+        if cryptsetup open "$luks_partition" cryptdev -d "$password_file"; then
+            log "Bölüm başarıyla açıldı."
+            printf "${GREEN}Bölüm başarıyla açıldı.${RESET}\n"
+        else
+            log "Hata: Bölüm açma başarısız."
+            printf "${RED}Hata: Bölüm açma başarısız.${RESET}\n" >&2
+            return 1
+        fi
     fi
 
     # Şifre dosyasını sil
