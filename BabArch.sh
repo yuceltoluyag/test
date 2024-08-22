@@ -12,7 +12,19 @@ check_existing_setup() {
         # /mnt/etc/fstab dosyasının olup olmadığını ve doğru Btrfs alt birimlerini içerip içermediğini kontrol et
         if [ -f /mnt/etc/fstab ] && grep -q "subvol=@" /mnt/etc/fstab; then
             echo "/mnt/etc/fstab dosyası doğru oluşturulmuş."
-            return 0  # Her şey doğru ise 0 (başarı) döndür
+            
+            # Mount işlemleri yapılmış mı kontrol et
+            if mount | grep -q "/mnt/home"; then
+                echo "Tüm mount işlemleri doğru yapılmış."
+                return 0  # Her şey doğru ise 0 (başarı) döndür
+            else
+                echo "Mount işlemleri eksik, eksik işlemler tamamlanacak."
+                # Eksik mount işlemleri yapılacak
+                mount_root_device
+                mount_btrfs_subvolumes
+                mount_esp_partition
+                return 0  # Mount işlemleri tamamlandıysa da 0 döndür
+            fi
         else
             echo "fstab dosyasında bir sorun var veya doğru oluşturulmamış."
             return 1  # fstab dosyasında sorun varsa 1 (hata) döndür
