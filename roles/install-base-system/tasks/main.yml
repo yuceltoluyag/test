@@ -1,0 +1,17 @@
+---
+- name: Synchronize package databases
+  command: pacman -Syy
+
+- name: Generate a new mirror list using reflector
+  command: reflector --verbose --protocol https --latest 5 --sort rate --country Germany --save /etc/pacman.d/mirrorlist
+
+- name: View CPU information to determine microcode package
+  command: grep vendor_id /proc/cpuinfo
+  register: cpu_info
+
+- name: Set microcode package based on CPU vendor
+  set_fact:
+    microcode: "{{ 'intel-ucode' if 'GenuineIntel' in cpu_info.stdout else 'amd-ucode' }}"
+
+- name: Install the base system
+  command: pacstrap /mnt base base-devel {{ microcode }} btrfs-progs linux linux-firmware bash-completion cryptsetup htop man-db mlocate neovim networkmanager openssh pacman-contrib pkgfile reflector sudo terminus-font tmux

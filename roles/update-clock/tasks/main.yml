@@ -1,0 +1,11 @@
+---
+- name: Enable network time synchronization
+  command: timedatectl set-ntp true
+
+- name: Check the current time synchronization status
+  command: timedatectl status
+  register: time_status
+
+- name: Display time synchronization status
+  debug:
+    msg: "{{ time_status.stdout }}"

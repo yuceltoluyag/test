@@ -1,0 +1,20 @@
+---
+- name: Ensure wireless interface is available
+  command: ip link show | grep wlan
+  register: wlan_check
+  failed_when: wlan_check.rc != 0
+  ignore_errors: yes
+
+- name: Install wireless utilities (if not already installed)
+  pacman:
+    name:
+      - iw
+      - wpa_supplicant
+      - dialog
+      - netctl
+    state: present
+  when: wlan_check.rc == 0
+
+- name: Prompt user to connect to a wireless network using wifi-menu
+  command: wifi-menu
+  when: wlan_check.rc == 0

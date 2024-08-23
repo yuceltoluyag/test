@@ -1,0 +1,14 @@
+---
+- name: Determine the correct partition path for encryption
+  set_fact:
+    luks_partition: "{{ disk }}{{ 'p2' if 'nvme' in disk else '2' }}"
+
+- name: Encrypt the partition using LUKS1
+  command: cryptsetup --type luks1 -v -y luksFormat "{{ luks_partition }}"
+  prompt: "This will erase all data on {{ luks_partition }}. Do you want to continue? [yes/no]"
+  register: cryptsetup_output
+  failed_when: "'yes' not in cryptsetup_output.msg"
+
+- name: Display encryption status
+  debug:
+    msg: "Encryption successful for {{ luks_partition }}"

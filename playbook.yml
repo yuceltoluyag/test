@@ -1,0 +1,24 @@
+---
+- hosts: localhost
+  become: true
+  vars_prompt:
+    - name: "hostname"
+      prompt: "Enter the hostname for this system (e.g., foobox):"
+    - name: "username"
+      prompt: "Enter the username to be created (e.g., foo):"
+  roles:
+    - keyboard-font
+    - uefi-check
+    - network
+    - update-clock
+    - disk-setup
+    - partition-disk
+    - encrypt-partition
+    - format-mount
+    - create-subvolumes
+    - mount-subvolumes
+    - mount-esp
+    - install-base-system
+    - generate-fstab
+    - configure
+    - post-install

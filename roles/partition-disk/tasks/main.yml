@@ -1,0 +1,15 @@
+---
+- name: List partition type codes
+  command: sgdisk --list-types
+
+- name: Create EFI partition (512MiB, code ef00)
+  command: sgdisk -n 0:0:+512MiB -t 0:ef00 -c 0:esp "{{ disk }}"
+
+- name: Create LUKS partition (remaining storage, code 8309)
+  command: sgdisk -n 0:0:0 -t 0:8309 -c 0:luks "{{ disk }}"
+
+- name: Reload the partition table
+  command: partprobe "{{ disk }}"
+
+- name: Print the new partition table
+  command: sgdisk -p "{{ disk }}"

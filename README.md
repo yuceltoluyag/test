@@ -1,2 +1,8 @@
-# test
-this area is not safe, please do not try it at home.
+arch-linux-setup/
+├── playbook.yml
+├── roles/
+│ ├── keyboard-font/
+│ │ ├── tasks/
+│ │ │ └── main.yml
+│ │  
+└── inventory

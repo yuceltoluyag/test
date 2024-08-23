@@ -1,0 +1,69 @@
+---
+- name: Unmount the root partition
+  command: umount /mnt
+
+- name: Set mount options for BTRFS subvolumes
+  set_fact:
+    sv_opts: "rw,noatime,compress-force=zstd:1,space_cache=v2"
+
+- name: Mount the root subvolume (@)
+  mount:
+    src: /dev/mapper/cryptdev
+    path: /mnt
+    fstype: btrfs
+    opts: "{{ sv_opts }},subvol=@"
+
+- name: Create mount points for additional subvolumes
+  file:
+    path: "/mnt/{{ item }}"
+    state: directory
+    mode: "0755"
+  with_items:
+    - home
+    - .snapshots
+    - var/cache
+    - var/lib/libvirt
+    - var/log
+    - var/tmp
+
+- name: Mount the home subvolume (@home)
+  mount:
+    src: /dev/mapper/cryptdev
+    path: /mnt/home
+    fstype: btrfs
+    opts: "{{ sv_opts }},subvol=@home"
+
+- name: Mount the snapshots subvolume (@snapshots)
+  mount:
+    src: /dev/mapper/cryptdev
+    path: /mnt/.snapshots
+    fstype: btrfs
+    opts: "{{ sv_opts }},subvol=@snapshots"
+
+- name: Mount the cache subvolume (@cache)
+  mount:
+    src: /dev/mapper/cryptdev
+    path: /mnt/var/cache
+    fstype: btrfs
+    opts: "{{ sv_opts }},subvol=@cache"
+
+- name: Mount the libvirt subvolume (@libvirt)
+  mount:
+    src: /dev/mapper/cryptdev
+    path: /mnt/var/lib/libvirt
+    fstype: btrfs
+    opts: "{{ sv_opts }},subvol=@libvirt"
+
+- name: Mount the log subvolume (@log)
+  mount:
+    src: /dev/mapper/cryptdev
+    path: /mnt/var/log
+    fstype: btrfs
+    opts: "{{ sv_opts }},subvol=@log"
+
+- name: Mount the tmp subvolume (@tmp)
+  mount:
+    src: /dev/mapper/cryptdev
+    path: /mnt/var/tmp
+    fstype: btrfs
+    opts: "{{ sv_opts }},subvol=@tmp"
