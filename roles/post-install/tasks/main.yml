@@ -103,7 +103,7 @@
     src: 99-sysctl.conf
     dest: /etc/sysctl.d/99-sysctl.conf
 
----
+
 # Mevcut görevler burada devam ediyor...
 
 - name: Install and configure mlocate
