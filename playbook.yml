@@ -6,6 +6,12 @@
       prompt: "Enter the hostname for this system (e.g., foobox):"
     - name: "username"
       prompt: "Enter the username to be created (e.g., foo):"
+
+  tasks:
+    - name: Set LUKS partition fact globally
+      set_fact:
+        luks_partition: "{{ disk }}{{ 'p2' if 'nvme' in disk else '2' }}"
+
   roles:
     - keyboard-font
     - uefi-check
