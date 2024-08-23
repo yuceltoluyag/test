@@ -6,6 +6,8 @@
       prompt: "Enter the hostname for this system (e.g., foobox):"
     - name: "username"
       prompt: "Enter the username to be created (e.g., foo):"
+    - name: "disk"
+      prompt: "Enter the disk to be used for partitioning (e.g., /dev/sda):"
 
   tasks:
     - name: Set LUKS partition fact globally
