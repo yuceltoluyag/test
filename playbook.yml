@@ -15,6 +15,7 @@
         luks_partition: "{{ disk }}{{ 'p2' if 'nvme' in disk else '2' }}"
 
   roles:
+    - ansible
     - keyboard-font
     - uefi-check
     - network
