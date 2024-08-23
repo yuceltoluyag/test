@@ -1,10 +1,11 @@
 ---
-- name: Encrypt the partition using LUKS1 with password prompt
-  expect:
-    command: cryptsetup --type luks1 -v -y luksFormat "{{ luks_partition }}"
-    responses:
-      "Enter passphrase for {{ luks_partition }}:": "your_password_here"
-      "Verify passphrase:": "your_password_here"
+- name: Determine the correct LUKS partition path
+  set_fact:
+    luks_partition: "{{ disk }}{{ 'p2' if 'nvme' in disk else '2' }}"
+
+- name: Encrypt the partition using LUKS1
+  command: cryptsetup --type luks1 -v -y luksFormat "{{ luks_partition }}"
+
 
 
 - name: Display encryption status
