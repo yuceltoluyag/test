@@ -299,6 +299,10 @@ echo -e "${GREEN}initramfs imajı başarıyla oluşturuldu.${NC}"
 
 # Şifreli bölümün UUID'sini belirleme
 uuid=$(blkid -s UUID -o value $part2)
+if [ -z "$uuid" ]; then
+    echo -e "${RED}UUID alınamadı, kurulum iptal ediliyor.${NC}"
+    exit 1
+fi
 # /etc/default/grub yapılandırması
 sed -i "s/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=\"loglevel=3 quiet cryptdevice=UUID=$uuid:cryptdev\"/" /etc/default/grub
 sed -i "s/^#GRUB_PRELOAD_MODULES=.*/GRUB_PRELOAD_MODULES=\"part_gpt part_msdos luks\"/" /etc/default/grub
