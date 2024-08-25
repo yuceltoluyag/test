@@ -1,4 +1,3 @@
-````markdown
 # Arch Linux Otomatik Kurulum Scripti
 
 Bu repo, Arch Linux'un otomatik kurulum ve yapılandırma sürecini kolaylaştırmak için hazırlanmış bash scriptlerini içerir. Kurulum süreci, sistemin temel yapılandırmasından post-installation (sonraki kurulum) adımlarına kadar tüm adımları kapsamaktadır.
@@ -17,10 +16,10 @@ Bu script, sistemin ilk kurulumu için kullanılır. Sistem, disk yapılandırma
 **Kullanım:**
 
 1. Script dosyasını çalıştırın:
+
    ```bash
    sudo bash main-installation.sh
    ```
-````
 
 2. Script çalışmaya başladığında sizden aşağıdaki bilgileri isteyecektir:
 
