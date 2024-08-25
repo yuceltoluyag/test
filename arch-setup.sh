@@ -299,7 +299,6 @@ echo -e "${GREEN}initramfs imajı başarıyla oluşturuldu.${NC}"
 
 # Şifreli bölümün UUID'sini belirleme
 uuid=$(blkid -s UUID -o value $part2)
-
 # /etc/default/grub yapılandırması
 sed -i "s/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=\"loglevel=3 quiet cryptdevice=UUID=$uuid:cryptdev\"/" /etc/default/grub
 sed -i "s/^#GRUB_PRELOAD_MODULES=.*/GRUB_PRELOAD_MODULES=\"part_gpt part_msdos luks\"/" /etc/default/grub
@@ -331,7 +330,7 @@ finalize_installation() {
     echo -e "${GREEN}Klasör içeriği /mnt/home/$username/test dizinine başarıyla kopyalandı.${NC}"
     # Diskleri unmount etme
     #umount -R /mnt || { echo -e "${RED}Unmount işlemi sırasında hata oluştu.${NC}"; exit 1; }
-    reboot
+    #reboot
 }
 
 # Tüm işlemleri başlatma
