@@ -269,14 +269,30 @@ echo "VISUAL=nvim" >> /etc/environment
 
 # 2.6 Root şifresi belirleme
 echo -e "${YELLOW}Root kullanıcısı için şifre belirleyin:${NC}"
-passwd
+read -s -p "Root şifresi: " root_password
+echo
+read -s -p "Root şifresini tekrar girin: " root_password2
+echo
+if [ "$root_password" != "$root_password2" ]; then
+    echo -e "${RED}Şifreler eşleşmiyor. Lütfen tekrar deneyin.${NC}"
+    exit 1
+fi
+echo "root:$root_password" | chpasswd
 
 # 2.7 Kullanıcı oluşturma ve sudo ayarları
 read -p "Lütfen oluşturmak istediğiniz kullanıcı adını girin: " username
-useradd -m -G wheel -s /bin/bash \$username
-export username
+useradd -m -G  optical,storage,wheel,video,audio,users,power,network,log -s /bin/bash \$username
 echo -e "${YELLOW}\$username kullanıcısı için şifre belirleyin:${NC}"
-passwd \$username
+read -s -p "Kullanıcı şifresi: " user_password
+echo
+read -s -p "Kullanıcı şifresini tekrar girin: " user_password2
+echo
+if [ "$user_password" != "$user_password2" ]; then
+    echo -e "${RED}Şifreler eşleşmiyor. Lütfen tekrar deneyin.${NC}"
+    exit 1
+fi
+echo "\$username:\$user_password" | chpasswd
+
 sed -i "s/# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/" /etc/sudoers
 
 # 2.8 NetworkManager'ı başlatmada etkinleştirme
