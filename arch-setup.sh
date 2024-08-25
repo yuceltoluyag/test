@@ -12,7 +12,7 @@ install_font() {
     if ! pacman -Qi terminus-font > /dev/null; then
         pacman -Sy --noconfirm terminus-font
     fi
-    setfont ter-d22b
+    setfont ter-v24n
 }
 
 # Klavye düzeni seçimi
@@ -49,6 +49,16 @@ check_uefi_mode() {
     fi
 }
 
+setup_partitions() {
+    if [[ "$disk" == *"nvme"* ]]; then
+        part1="${disk}p1"
+        part2="${disk}p2"
+    else
+        part1="${disk}1"
+        part2="${disk}2"
+    fi
+}
+
 # Disk seçimi ve türüne göre partisyon ayarlama
 select_disk() {
     echo -e "${YELLOW}Kurulum için kullanılacak disk seçiliyor...${NC}"
@@ -66,15 +76,7 @@ select_disk() {
     done
 }
 
-setup_partitions() {
-    if [[ "$disk" == *"nvme"* ]]; then
-        part1="${disk}p1"
-        part2="${disk}p2"
-    else
-        part1="${disk}1"
-        part2="${disk}2"
-    fi
-}
+
 
 # Bölüm silme ve yeniden yapılandırma
 configure_partitions() {
@@ -111,6 +113,11 @@ setup_filesystems() {
 # Alt birimlerin oluşturulması ve bağlanması
 setup_btrfs_subvolumes() {
     echo -e "${YELLOW}BTRFS alt birimleri oluşturuluyor...${NC}"
+    
+    # Disk ilk kez /mnt dizinine monte ediliyor
+    mount /dev/mapper/cryptdev /mnt
+    
+    # Alt birimler oluşturuluyor
     btrfs subvolume create /mnt/@
     btrfs subvolume create /mnt/@home
     btrfs subvolume create /mnt/@snapshots
@@ -125,6 +132,7 @@ setup_btrfs_subvolumes() {
 
     export sv_opts="rw,noatime,compress-force=zstd:1,space_cache=v2"
 
+    # Alt birimler monte ediliyor
     echo -e "${YELLOW}Kök alt birimi (subvol=@) monte ediliyor...${NC}"
     mount -o ${sv_opts},subvol=@ /dev/mapper/cryptdev /mnt
 
@@ -140,6 +148,7 @@ setup_btrfs_subvolumes() {
 
     echo -e "${GREEN}Tüm alt birimler başarıyla monte edildi.${NC}"
 }
+
 
 # ESP bölümü monte etme
 mount_esp() {
@@ -204,6 +213,17 @@ password_check() {
             fi
         fi
     done
+}
+
+# Chroot işlemi öncesi kontrol
+check_mounts_before_chroot() {
+    echo -e "${YELLOW}Chroot öncesi disklerin doğru monte edildiği kontrol ediliyor...${NC}"
+    if mountpoint -q /mnt && mountpoint -q /mnt/efi && mountpoint -q /mnt/home && mountpoint -q /mnt/.snapshots; then
+        echo -e "${GREEN}Tüm montajlar başarılı.${NC}"
+    else
+        echo -e "${RED}Montajlarda sorun var. Lütfen tekrar kontrol edin.${NC}"
+        exit 1
+    fi
 }
 
 # Chroot içindeki yapılandırma
@@ -309,6 +329,7 @@ if grep -q 'cryptodisk\|luks' /efi/grub/grub.cfg; then
   echo -e "${GREEN}GRUB yapılandırması başarıyla tamamlandı ve gerekli modüller yüklendi.${NC}"
 else
   echo -e "${RED}GRUB yapılandırması sırasında bir hata oluştu. cryptodisk veya luks modülleri eksik.${NC}"
+  exit 1  # Hata oluştuğunda kurulumu durdurma
 fi
 
 EOF
@@ -323,9 +344,12 @@ finalize_installation() {
     cp -r "$(pwd)"/* /mnt/home/$username/test/
     echo -e "${GREEN}Klasör içeriği /mnt/home/$username/test dizinine başarıyla kopyalandı.${NC}"
     
-    umount -R /mnt
+    # Diskleri unmount etme
+    umount -R /mnt || { echo -e "${RED}Unmount işlemi sırasında hata oluştu.${NC}"; exit 1; }
+    
     reboot
 }
+
 
 # Tüm işlemleri başlatma
 main() {
@@ -338,6 +362,7 @@ main() {
     setup_btrfs_subvolumes
     mount_esp
     configure_system
+    check_mounts_before_chroot
     configure_chroot
     finalize_installation
 }
