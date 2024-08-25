@@ -262,21 +262,21 @@ chmod 600 /crypto_keyfile.bin
 cryptsetup luksAddKey $part2 /crypto_keyfile.bin
 
 # mkinitcpio yapılandırması ve doğrulama
-sed -i "s/^FILES=()/FILES=(\/crypto_keyfile.bin)/" /etc/mkinitcpio.conf
-sed -i "s/^MODULES=()/MODULES=(btrfs)/" /etc/mkinitcpio.conf
-sed -i "s/^HOOKS=.*/HOOKS=(base udev keyboard autodetect keymap consolefont modconf block encrypt filesystems fsck)/" /etc/mkinitcpio.conf
+sed -i "s/^FILES=()/FILES=(\/crypto_keyfile.bin)/" /mnt/etc/mkinitcpio.conf
+sed -i "s/^MODULES=()/MODULES=(btrfs)/" /mnt/etc/mkinitcpio.conf
+sed -i "s/^HOOKS=.*/HOOKS=(base udev keyboard autodetect keymap consolefont modconf block encrypt filesystems fsck)/" /mnt/etc/mkinitcpio.conf
 
 # Doğrulama: Ayarların doğru uygulanıp uygulanmadığını kontrol et
-if grep -q "FILES=(/crypto_keyfile.bin)" /etc/mkinitcpio.conf && \
-   grep -q "MODULES=(btrfs)" /etc/mkinitcpio.conf && \
-   grep -q "HOOKS=(base udev keyboard autodetect keymap consolefont modconf block encrypt filesystems fsck)" /etc/mkinitcpio.conf; then
+if grep -q "FILES=(/crypto_keyfile.bin)" /mnt/etc/mkinitcpio.conf && \
+   grep -q "MODULES=(btrfs)" /mnt/etc/mkinitcpio.conf && \
+   grep -q "HOOKS=(base udev keyboard autodetect keymap consolefont modconf block encrypt filesystems fsck)" /mnt/etc/mkinitcpio.conf; then
     echo "mkinitcpio yapılandırması başarılı."
 else
     echo "mkinitcpio yapılandırmasında hata var!" >&2
     exit 1
 fi
 
-mkinitcpio -P || { echo "initramfs oluşturulamadı!" >&2; exit 1; }
+mkinitcpio -P -c /mnt/etc/mkinitcpio.conf -k /mnt/boot/vmlinuz-linux || { echo "initramfs oluşturulamadı!" >&2; exit 1; }
 
 # UUID alınması ve doğrulama
 uuid=$(blkid -s UUID -o value $part2)
@@ -286,22 +286,22 @@ if [ -z "$uuid" ]; then
 fi
 
 # GRUB yapılandırma ve doğrulama
-sed -i "s/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=\"loglevel=3 quiet cryptdevice=UUID=$uuid:cryptdev\"/" /etc/default/grub
-sed -i "s/^#GRUB_PRELOAD_MODULES=.*/GRUB_PRELOAD_MODULES=\"part_gpt part_msdos luks\"/" /etc/default/grub
-sed -i "s/^#GRUB_ENABLE_CRYPTODISK=.*/GRUB_ENABLE_CRYPTODISK=y/" /etc/default/grub
+sed -i "s/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=\"loglevel=3 quiet cryptdevice=UUID=$uuid:cryptdev\"/" /mnt/etc/default/grub
+sed -i "s/^#GRUB_PRELOAD_MODULES=.*/GRUB_PRELOAD_MODULES=\"part_gpt part_msdos luks\"/" /mnt/etc/default/grub
+sed -i "s/^#GRUB_ENABLE_CRYPTODISK=.*/GRUB_ENABLE_CRYPTODISK=y/" /mnt/etc/default/grub
 
 # Doğrulama: GRUB ayarlarının doğru olduğunu kontrol et
-if grep -q "GRUB_CMDLINE_LINUX_DEFAULT=\"loglevel=3 quiet cryptdevice=UUID=$uuid:cryptdev\"" /etc/default/grub && \
-   grep -q "GRUB_PRELOAD_MODULES=\"part_gpt part_msdos luks\"" /etc/default/grub && \
-   grep -q "GRUB_ENABLE_CRYPTODISK=y" /etc/default/grub; then
+if grep -q "GRUB_CMDLINE_LINUX_DEFAULT=\"loglevel=3 quiet cryptdevice=UUID=$uuid:cryptdev\"" /mnt/etc/default/grub && \
+   grep -q "GRUB_PRELOAD_MODULES=\"part_gpt part_msdos luks\"" /mnt/etc/default/grub && \
+   grep -q "GRUB_ENABLE_CRYPTODISK=y" /mnt/etc/default/grub; then
     echo "GRUB yapılandırması başarılı."
 else
     echo "GRUB yapılandırmasında hata var!" >&2
     exit 1
 fi
 
-grub-install --target=x86_64-efi --efi-directory=/efi --boot-directory=/efi --bootloader-id=GRUB || { echo "GRUB kurulumu başarısız!" >&2; exit 1; }
-grub-mkconfig -o /efi/grub/grub.cfg || { echo "GRUB yapılandırma dosyası oluşturulamadı!" >&2; exit 1; }
+grub-install --target=x86_64-efi --efi-directory=/mnt/efi --boot-directory=/mnt/boot --bootloader-id=GRUB || { echo "GRUB kurulumu başarısız!" >&2; exit 1; }
+grub-mkconfig -o /mnt/efi/grub/grub.cfg || { echo "GRUB yapılandırma dosyası oluşturulamadı!" >&2; exit 1; }
 
 EOF
 }
