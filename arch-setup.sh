@@ -185,7 +185,7 @@ configure_system() {
 
     # Temel sistemi yükleme
     echo -e "${YELLOW}Temel sistem yükleniyor...${NC}"
-    pacstrap /mnt base base-devel ${microcode} btrfs-progs linux linux-firmware bash-completion cryptsetup htop man-db mlocate neovim networkmanager openssh pacman-contrib pkgfile reflector sudo terminus-font tmux
+    pacstrap /mnt --needed base base-devel ${microcode} btrfs-progs linux linux-firmware bash-completion cryptsetup htop man-db mlocate neovim networkmanager openssh pacman-contrib pkgfile reflector sudo grub efibootmgr terminus-font vim tmux
     echo -e "${GREEN}Temel sistem başarıyla yüklendi.${NC}"
 
     # fstab dosyasını oluşturma
@@ -297,9 +297,6 @@ sed -i "s/^HOOKS=.*/HOOKS=(base udev keyboard autodetect keymap consolefont modc
 mkinitcpio -P
 echo -e "${GREEN}initramfs imajı başarıyla oluşturuldu.${NC}"
 
-# 2.13 GRUB ve efibootmgr kurulumu
-pacman -Syy --noconfirm grub efibootmgr
-
 # Şifreli bölümün UUID'sini belirleme
 uuid=$(blkid -s UUID -o value $part2)
 
@@ -333,7 +330,7 @@ finalize_installation() {
     cp -r "$(pwd)"/* /mnt/home/$username/test/
     echo -e "${GREEN}Klasör içeriği /mnt/home/$username/test dizinine başarıyla kopyalandı.${NC}"
     # Diskleri unmount etme
-    umount -R /mnt || { echo -e "${RED}Unmount işlemi sırasında hata oluştu.${NC}"; exit 1; }
+    #umount -R /mnt || { echo -e "${RED}Unmount işlemi sırasında hata oluştu.${NC}"; exit 1; }
     reboot
 }
 
