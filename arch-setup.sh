@@ -150,9 +150,13 @@ setup_btrfs_subvolumes() {
 # ESP bölümü monte etme
 mount_esp() {
     echo -e "${YELLOW}ESP bölümü /mnt/efi dizinine monte ediliyor...${NC}"
-    mkdir /mnt/efi
-    mount ${part1} /mnt/efi
-    echo -e "${GREEN}ESP bölümü başarıyla /mnt/efi dizinine monte edildi.${NC}"
+    mkdir -p /mnt/efi
+    if mount ${part1} /mnt/efi; then
+        echo -e "${GREEN}ESP bölümü başarıyla /mnt/efi dizinine monte edildi.${NC}"
+    else
+        echo -e "${RED}EFI bölümünü monte etme başarısız oldu!${NC}"
+        exit 1
+    fi
 }
 
 # Temel yapılandırma işlemleri
