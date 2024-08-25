@@ -76,8 +76,6 @@ select_disk() {
     done
 }
 
-
-
 # Bölüm silme ve yeniden yapılandırma
 configure_partitions() {
     echo -e "${YELLOW}Eski bölüm düzeni siliniyor...${NC}"
@@ -148,7 +146,6 @@ setup_btrfs_subvolumes() {
 
     echo -e "${GREEN}Tüm alt birimler başarıyla monte edildi.${NC}"
 }
-
 
 # ESP bölümü monte etme
 mount_esp() {
@@ -332,24 +329,39 @@ else
   exit 1  # Hata oluştuğunda kurulumu durdurma
 fi
 
+  # Chroot sonrası username değişkenini yeniden tanımlayın
+    username=$(arch-chroot /mnt /bin/bash -c 'echo \$username')
+
+    # Eğer chroot işlemleri sırasında bir hata oluşursa, buraya kadar gelememesi gerekir.
+    if [ $? -eq 0 ]; then
+        echo "chroot_success=true" > /mnt/chroot_status
+    else
+        echo "chroot_success=false" > /mnt/chroot_status
+        exit 1
+    fi
 EOF
 }
 
 # Chroot'tan çıkış ve sistemin yeniden başlatılması
 finalize_installation() {
-    echo -e "${YELLOW}Chroot'tan çıkılıyor ve sistem yeniden başlatılıyor...${NC}"
-    
-    # Bulunduğunuz klasörün içeriğini /mnt/home/kullanıcıadı/test klasörüne kopyalama
-    mkdir -p /mnt/home/$username/test
-    cp -r "$(pwd)"/* /mnt/home/$username/test/
-    echo -e "${GREEN}Klasör içeriği /mnt/home/$username/test dizinine başarıyla kopyalandı.${NC}"
-    
-    # Diskleri unmount etme
-    umount -R /mnt || { echo -e "${RED}Unmount işlemi sırasında hata oluştu.${NC}"; exit 1; }
-    
-    reboot
+    # Chroot işlemi başarıyla tamamlandıysa finalize işlemlerine geç
+    if grep -q "chroot_success=true" /mnt/chroot_status; then
+        echo -e "${YELLOW}Chroot'tan çıkılıyor ve sistem yeniden başlatılıyor...${NC}"
+        
+        # Bulunduğunuz klasörün içeriğini /mnt/home/kullanıcıadı/test klasörüne kopyalama
+        mkdir -p /mnt/home/$username/test
+        cp -r "$(pwd)"/* /mnt/home/$username/test/
+        echo -e "${GREEN}Klasör içeriği /mnt/home/$username/test dizinine başarıyla kopyalandı.${NC}"
+        
+        # Diskleri unmount etme
+        umount -R /mnt || { echo -e "${RED}Unmount işlemi sırasında hata oluştu.${NC}"; exit 1; }
+        
+        reboot
+    else
+        echo -e "${RED}Chroot işlemi başarısız oldu. finalize_installation çalıştırılmayacak.${NC}"
+        exit 1
+    fi
 }
-
 
 # Tüm işlemleri başlatma
 main() {
@@ -364,7 +376,14 @@ main() {
     configure_system
     check_mounts_before_chroot
     configure_chroot
-    finalize_installation
+
+    # Eğer chroot işlemleri başarılıysa finalize çalıştır
+    if [ -f /mnt/chroot_status ] && grep -q "chroot_success=true" /mnt/chroot_status; then
+        finalize_installation
+    else
+        echo -e "${RED}Chroot işlemi başarısız oldu. finalize_installation çalıştırılmayacak.${NC}"
+        exit 1
+    fi
 }
 
 main
