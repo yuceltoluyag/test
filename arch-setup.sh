@@ -76,8 +76,6 @@ select_disk() {
     done
 }
 
-
-
 # Bölüm silme ve yeniden yapılandırma
 configure_partitions() {
     echo -e "${YELLOW}Eski bölüm düzeni siliniyor...${NC}"
@@ -149,7 +147,6 @@ setup_btrfs_subvolumes() {
     echo -e "${GREEN}Tüm alt birimler başarıyla monte edildi.${NC}"
 }
 
-
 # ESP bölümü monte etme
 mount_esp() {
     echo -e "${YELLOW}ESP bölümü /mnt/efi dizinine monte ediliyor...${NC}"
@@ -192,25 +189,40 @@ configure_system() {
     echo -e "${GREEN}fstab dosyası başarıyla oluşturuldu.${NC}"
 }
 
-# Şifre kontrol fonksiyonu
-password_check() {
-    local password1 password2 attempts=0
-    while [ $attempts -lt 3 ]; do
-        read -s -p "Şifreyi girin: " password1
+# Kullanıcıyı oluşturma ve şifre belirleme
+set_user_and_password() {
+    local user=$1
+    local pass
+    local pass_confirm
+    local retry_limit=3
+    local attempts=0
+
+    # Kullanıcıyı kontrol et ve varsa sadece şifresini güncelle
+    if arch-chroot /mnt id -u "$user" >/dev/null 2>&1; then
+        echo "Kullanıcı $user zaten mevcut. Şifresi güncellenecek."
+    else
+        # Kullanıcıyı oluştur
+        arch-chroot /mnt useradd -m -G wheel -s /bin/bash "$user"
+    fi
+
+    while true; do
+        read -r -s -p "$user için bir şifre belirleyin: " pass
         echo
-        read -s -p "Şifreyi tekrar girin: " password2
+        read -r -s -p "Şifreyi tekrar girin: " pass_confirm
         echo
-        if [ "$password1" == "$password2" ]; then
-            echo -e "${GREEN}Şifreler eşleşti.${NC}"
-            echo "$password1" # Şifreyi döndürüyor
-            return 0
-        else
-            echo -e "${RED}Şifreler eşleşmiyor!${NC}"
-            attempts=$((attempts + 1))
-            if [ $attempts -eq 3 ]; then
-                echo -e "${RED}Şifre belirlemede maksimum deneme hakkı aşıldı.${NC}"
-                exit 1
+        if [ "$pass" == "$pass_confirm" ]; then
+            if echo "$user:$pass" | arch-chroot /mnt chpasswd; then
+                break
+            else
+                echo "Şifre belirlenirken bir hata oluştu. Tekrar deneyin."
             fi
+        else
+            echo "Şifreler eşleşmiyor, tekrar deneyin."
+        fi
+        attempts=$((attempts + 1))
+        if [ "$attempts" -ge "$retry_limit" ]; then
+            echo "Çok fazla başarısız deneme. İşlem iptal ediliyor."
+            exit 1
         fi
     done
 }
@@ -249,52 +261,11 @@ sed -i "s/^#\(tr_TR.UTF-8\)/\1/" /etc/locale.gen
 sed -i "s/^#\(en_US.UTF-8\)/\1/" /etc/locale.gen
 echo "LANG=tr_TR.UTF-8" > /etc/locale.conf
 echo "LC_MESSAGES=en_US.UTF-8" >> /etc/locale.conf
-echo "LC_ADDRESS=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_COLLATE=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_CTYPE=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_IDENTIFICATION=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_MEASUREMENT=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_MONETARY=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_NAME=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_NUMERIC=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_PAPER=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_TELEPHONE=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_TIME=tr_TR.UTF-8" >> /etc/locale.conf
 locale-gen
 
 # 2.5 Varsayılan editör ayarlama (neovim)
 echo "EDITOR=nvim" > /etc/environment
 echo "VISUAL=nvim" >> /etc/environment
-
-
-# 2.6 Root şifresi belirleme
-echo -e "${YELLOW}Root kullanıcısı için şifre belirleyin:${NC}"
-read -s -p "Root şifresi: " root_password
-echo
-read -s -p "Root şifresini tekrar girin: " root_password2
-echo
-if [ "$root_password" != "$root_password2" ]; then
-    echo -e "${RED}Şifreler eşleşmiyor. Lütfen tekrar deneyin.${NC}"
-    exit 1
-fi
-echo "root:$root_password" | arch-chroot /mnt chpasswd
-
-# 2.7 Kullanıcı oluşturma ve sudo ayarları
-read -p "Lütfen oluşturmak istediğiniz kullanıcı adını girin: " username
-useradd -m -G wheel -s /bin/bash \$username
-echo -e "${YELLOW}\$username kullanıcısı için şifre belirleyin:${NC}"
-read -s -p "Kullanıcı şifresi: " user_password
-echo
-read -s -p "Kullanıcı şifresini tekrar girin: " user_password2
-echo
-if [ "$user_password" != "$user_password2" ]; then
-    echo -e "${RED}Şifreler eşleşmiyor. Lütfen tekrar deneyin.${NC}"
-    exit 1
-fi
-echo "\$username:\$user_password" | arch-chroot /mnt chpasswd
-
-# Sudo yetkisi ayarlama
-sed -i "s/# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/" /mnt/etc/sudoers
 
 # 2.8 NetworkManager'ı başlatmada etkinleştirme
 systemctl enable NetworkManager
@@ -344,40 +315,21 @@ if grep -q 'cryptodisk\|luks' /efi/grub/grub.cfg; then
 else
   echo -e "${RED}GRUB yapılandırması sırasında bir hata oluştu. cryptodisk veya luks modülleri eksik.${NC}"
   exit 1  # Hata oluştuğunda kurulumu durdurma
-fi
-
-  # Chroot sonrası username değişkenini yeniden tanımlayın
-    username=$(arch-chroot /mnt /bin/bash -c 'echo \$username')
-
-    # Eğer chroot işlemleri sırasında bir hata oluşursa, buraya kadar gelememesi gerekir.
-    if [ $? -eq 0 ]; then
-        echo "chroot_success=true" > /mnt/chroot_status
-    else
-        echo "chroot_success=false" > /mnt/chroot_status
-        exit 1
-    fi
+fi 
 EOF
 }
 
 # Chroot'tan çıkış ve sistemin yeniden başlatılması
 finalize_installation() {
     # Chroot işlemi başarıyla tamamlandıysa finalize işlemlerine geç
-    if grep -q "chroot_success=true" /mnt/chroot_status; then
-        echo -e "${YELLOW}Chroot'tan çıkılıyor ve sistem yeniden başlatılıyor...${NC}"
-        
-        # Bulunduğunuz klasörün içeriğini /mnt/home/kullanıcıadı/test klasörüne kopyalama
-        mkdir -p /mnt/home/$username/test
-        cp -r "$(pwd)"/* /mnt/home/$username/test/
-        echo -e "${GREEN}Klasör içeriği /mnt/home/$username/test dizinine başarıyla kopyalandı.${NC}"
-        
-        # Diskleri unmount etme
-        umount -R /mnt || { echo -e "${RED}Unmount işlemi sırasında hata oluştu.${NC}"; exit 1; }
-        
-        reboot
-    else
-        echo -e "${RED}Chroot işlemi başarısız oldu. finalize_installation çalıştırılmayacak.${NC}"
-        exit 1
-    fi
+    echo -e "${YELLOW}Chroot'tan çıkılıyor ve sistem yeniden başlatılıyor...${NC}"
+    # Bulunduğunuz klasörün içeriğini /mnt/home/kullanıcıadı/test klasörüne kopyalama
+    mkdir -p /mnt/home/$username/test
+    cp -r "$(pwd)"/* /mnt/home/$username/test/
+    echo -e "${GREEN}Klasör içeriği /mnt/home/$username/test dizinine başarıyla kopyalandı.${NC}"
+    # Diskleri unmount etme
+    umount -R /mnt || { echo -e "${RED}Unmount işlemi sırasında hata oluştu.${NC}"; exit 1; }
+    reboot
 }
 
 # Tüm işlemleri başlatma
@@ -393,14 +345,10 @@ main() {
     configure_system
     check_mounts_before_chroot
     configure_chroot
-
-    # Eğer chroot işlemleri başarılıysa finalize çalıştır
-    if [ -f /mnt/chroot_status ] && grep -q "chroot_success=true" /mnt/chroot_status; then
-        finalize_installation
-    else
-        echo -e "${RED}Chroot işlemi başarısız oldu. finalize_installation çalıştırılmayacak.${NC}"
-        exit 1
-    fi
+    read -r -p "Lütfen bir kullanıcı hesabı için ad girin: " username
+    set_user_and_password "$username"
+    set_user_and_password "root"
+    finalize_installation
 }
 
 main
