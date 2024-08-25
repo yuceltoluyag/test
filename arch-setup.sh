@@ -256,6 +256,7 @@ echo -e "\$root_password\n\$root_password" | passwd
 # 2.7 Kullanıcı oluşturma ve sudo ayarları
 read -p "Lütfen oluşturmak istediğiniz kullanıcı adını girin: " username
 useradd -m -G wheel -s /bin/bash \$username
+export username
 echo -e "${YELLOW}\$username kullanıcısı için şifre belirleyin:${NC}"
 user_password=\$(password_check)
 echo -e "\$user_password\n\$user_password" | passwd \$username
@@ -322,7 +323,6 @@ finalize_installation() {
     cp -r "$(pwd)"/* /mnt/home/$username/test/
     echo -e "${GREEN}Klasör içeriği /mnt/home/$username/test dizinine başarıyla kopyalandı.${NC}"
     
-    exit
     umount -R /mnt
     reboot
 }
