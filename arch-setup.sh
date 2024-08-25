@@ -277,11 +277,11 @@ if [ "$root_password" != "$root_password2" ]; then
     echo -e "${RED}Şifreler eşleşmiyor. Lütfen tekrar deneyin.${NC}"
     exit 1
 fi
-echo "root:$root_password" | chpasswd
+echo "root:$root_password" | arch-chroot /mnt chpasswd
 
 # 2.7 Kullanıcı oluşturma ve sudo ayarları
 read -p "Lütfen oluşturmak istediğiniz kullanıcı adını girin: " username
-useradd -m -G  optical,storage,wheel,video,audio,users,power,network,log -s /bin/bash \$username
+useradd -m -G wheel -s /bin/bash \$username
 echo -e "${YELLOW}\$username kullanıcısı için şifre belirleyin:${NC}"
 read -s -p "Kullanıcı şifresi: " user_password
 echo
@@ -291,9 +291,10 @@ if [ "$user_password" != "$user_password2" ]; then
     echo -e "${RED}Şifreler eşleşmiyor. Lütfen tekrar deneyin.${NC}"
     exit 1
 fi
-echo "\$username:\$user_password" | chpasswd
+echo "\$username:\$user_password" | arch-chroot /mnt chpasswd
 
-sed -i "s/# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/" /etc/sudoers
+# Sudo yetkisi ayarlama
+sed -i "s/# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/" /mnt/etc/sudoers
 
 # 2.8 NetworkManager'ı başlatmada etkinleştirme
 systemctl enable NetworkManager
