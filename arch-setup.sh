@@ -149,12 +149,13 @@ setup_btrfs_subvolumes() {
 
 # ESP bölümü monte etme
 mount_esp() {
-    echo -e "${YELLOW}ESP bölümü /mnt/efi dizinine monte ediliyor...${NC}"
+    echo -e "${YELLOW}ESP bölümü ${part1} /mnt/efi dizinine monte ediliyor...${NC}"
     mkdir -p /mnt/efi
     if mount ${part1} /mnt/efi; then
-        echo -e "${GREEN}ESP bölümü başarıyla /mnt/efi dizinine monte edildi.${NC}"
+        echo -e "${GREEN}ESP bölümü ${part1} başarıyla /mnt/efi dizinine monte edildi.${NC}"
+
     else
-        echo -e "${RED}EFI bölümünü monte etme başarısız oldu!${NC}"
+        echo -e "${RED}EFI bölümünü ${part1} monte etme başarısız oldu!${NC}"
         exit 1
     fi
 }
@@ -297,13 +298,13 @@ mkinitcpio -P
 echo -e "${GREEN}initramfs imajı başarıyla oluşturuldu.${NC}"
 
 # 2.13 GRUB ve efibootmgr kurulumu
-pacman -S --noconfirm grub efibootmgr
+pacman -Syy --noconfirm grub efibootmgr
 
 # Şifreli bölümün UUID'sini belirleme
-uuid=\$(blkid -s UUID -o value $part2)
+uuid=$(blkid -s UUID -o value $part2)
 
 # /etc/default/grub yapılandırması
-sed -i "s/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=\"loglevel=3 quiet cryptdevice=UUID=\$uuid:cryptdev\"/" /etc/default/grub
+sed -i "s/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=\"loglevel=3 quiet cryptdevice=UUID=$uuid:cryptdev\"/" /etc/default/grub
 sed -i "s/^#GRUB_PRELOAD_MODULES=.*/GRUB_PRELOAD_MODULES=\"part_gpt part_msdos luks\"/" /etc/default/grub
 sed -i "s/^#GRUB_ENABLE_CRYPTODISK=.*/GRUB_ENABLE_CRYPTODISK=y/" /etc/default/grub
 
