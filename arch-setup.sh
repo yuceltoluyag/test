@@ -76,6 +76,8 @@ select_disk() {
     done
 }
 
+
+
 # Bölüm silme ve yeniden yapılandırma
 configure_partitions() {
     echo -e "${YELLOW}Eski bölüm düzeni siliniyor...${NC}"
@@ -146,6 +148,7 @@ setup_btrfs_subvolumes() {
 
     echo -e "${GREEN}Tüm alt birimler başarıyla monte edildi.${NC}"
 }
+
 
 # ESP bölümü monte etme
 mount_esp() {
@@ -227,8 +230,6 @@ check_mounts_before_chroot() {
 configure_chroot() {
     echo -e "${YELLOW}Sisteme chroot ile giriliyor ve yapılandırma adımları gerçekleştiriliyor...${NC}"
     arch-chroot /mnt /bin/bash -e <<EOF
-# Şifre kontrol fonksiyonunu chroot içinde tanımlama
-$(declare -f password_check)
 
 # 2.1 Zaman dilimini ayarlama (Istanbul)
 ln -sf /usr/share/zoneinfo/Europe/Istanbul /etc/localtime
@@ -265,18 +266,17 @@ locale-gen
 echo "EDITOR=nvim" > /etc/environment
 echo "VISUAL=nvim" >> /etc/environment
 
+
 # 2.6 Root şifresi belirleme
 echo -e "${YELLOW}Root kullanıcısı için şifre belirleyin:${NC}"
-root_password=\$(password_check)
-echo -e "\$root_password\n\$root_password" | passwd
+passwd
 
 # 2.7 Kullanıcı oluşturma ve sudo ayarları
 read -p "Lütfen oluşturmak istediğiniz kullanıcı adını girin: " username
 useradd -m -G wheel -s /bin/bash \$username
 export username
 echo -e "${YELLOW}\$username kullanıcısı için şifre belirleyin:${NC}"
-user_password=\$(password_check)
-echo -e "\$user_password\n\$user_password" | passwd \$username
+passwd \$username
 sed -i "s/# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/" /etc/sudoers
 
 # 2.8 NetworkManager'ı başlatmada etkinleştirme
