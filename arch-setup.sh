@@ -23,7 +23,7 @@ log() {
     esac
 
     # Ekrana renkli çıktı, log dosyasına renksiz çıktı
-    printf "${color}%s [%s] %s${NC}\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$level" "$msg" | tee -a "$LOG_FILE" | sed 's/\x1b\[[0-9;]*m//g' >> "$LOG_FILE"
+    printf "${color}%s [%s] %s${NC}\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$level" "$msg" | tee -a >(sed 's/\x1b\[[0-9;]*m//g' >> "$LOG_FILE")
 }
 
 # Terminus font yükleme ve ayarlama
@@ -68,6 +68,21 @@ virt_check() {
     esac
 }
 
+# Keyfile oluşturma ve LUKS'e ekleme (arch-chroot dışı)
+setup_keyfile() {
+    log "Keyfile oluşturuluyor..." "INFO"
+    dd_output=$(dd bs=512 count=4 iflag=fullblock if=/dev/random of=/crypto_keyfile.bin 2>&1)
+    if echo "$dd_output" | grep -q "records in"; then
+        chmod 600 /crypto_keyfile.bin
+        log "Keyfile başarıyla oluşturuldu." "INFO"
+    else
+        log "Keyfile oluşturulurken bir hata meydana geldi: $dd_output" "ERROR"
+        exit 1
+    fi
+    chmod 600 /crypto_keyfile.bin
+    log "Keyfile LUKS'e ekleniyor..." "INFO"
+    cryptsetup luksAddKey $part2 /crypto_keyfile.bin || log "Keyfile ekleme işlemi başarısız oldu." "ERROR"
+}
 
 # Klavye düzeni seçimi
 select_keyboard_layout() {
@@ -367,16 +382,6 @@ systemctl enable NetworkManager || log "NetworkManager etkinleştirilemedi." "ER
 log "SSH sunucusu etkinleştiriliyor..." "INFO"
 systemctl enable sshd.service || log "SSH sunucusu etkinleştirilemedi." "ERROR"
 
-
-# Keyfile oluşturma ve LUKS'e ekleme
-log "Keyfile oluşturuluyor..." "INFO"
-dd bs=512 count=4 iflag=fullblock if=/dev/random of=/crypto_keyfile.bin || log "Keyfile oluşturulamadı." "ERROR"
-chmod 600 /crypto_keyfile.bin || log "Keyfile izinleri ayarlanamadı." "ERROR"
-
-log "Keyfile LUKS'e ekleniyor..." "INFO"
-cryptsetup luksAddKey $part2 /crypto_keyfile.bin || log "Keyfile LUKS'e eklenemedi." "ERROR"
-
-
 # mkinitcpio yapılandırma ve GRUB ayarları
 EOF
 
@@ -404,6 +409,7 @@ main() {
     setup_filesystems
     setup_btrfs_subvolumes
     mount_esp
+    setup_keyfile
     configure_system
     virt_check
     check_mounts_before_chroot
