@@ -4,12 +4,12 @@ Bu repo, Arch Linux'un otomatik kurulum ve yapılandırma sürecini kolaylaştı
 
 ## İçerik
 
-- **main-installation.sh**: Arch Linux'un temel kurulumunu gerçekleştiren script.
-- **post-installation.sh**: Sistem kurulduktan sonra çeşitli araçların ve yapılandırmaların yapılmasını sağlayan script.
+- **arch-setup.sh**: Arch Linux'un temel kurulumunu gerçekleştiren script.
+- **post-install.sh**: Sistem kurulduktan sonra çeşitli araçların ve yapılandırmaların yapılmasını sağlayan script.
 
 ## Kurulum ve Kullanım
 
-### 1. Arch Linux Temel Kurulumu (main-installation.sh)
+### 1. Arch Linux Temel Kurulumu (arch-setup.sh)
 
 Bu script, sistemin ilk kurulumu için kullanılır. Sistem, disk yapılandırmasından GRUB yüklemeye kadar tüm işlemleri otomatik olarak gerçekleştirir.
 
@@ -18,7 +18,7 @@ Bu script, sistemin ilk kurulumu için kullanılır. Sistem, disk yapılandırma
 1. Script dosyasını çalıştırın:
 
    ```bash
-   sudo bash main-installation.sh
+   sudo bash arch-setup.sh
    ```
 
 2. Script çalışmaya başladığında sizden aşağıdaki bilgileri isteyecektir:
@@ -33,7 +33,7 @@ Bu script, sistemin ilk kurulumu için kullanılır. Sistem, disk yapılandırma
 
 **Not:** Kurulum sırasında UEFI kontrolü yapılır. Eğer sistem BIOS modda başlatılmışsa kurulum durdurulacaktır.
 
-### 2. Post-Installation (post-installation.sh)
+### 2. Post-Installation (post-install.sh)
 
 Sistem kurulduktan sonra, bu script temel paketlerin kurulmasını ve yapılandırılmasını sağlar.
 
@@ -42,7 +42,7 @@ Sistem kurulduktan sonra, bu script temel paketlerin kurulmasını ve yapıland�
 1. Script dosyasını çalıştırın:
 
    ```bash
-   sudo bash post-installation.sh
+   sudo bash post-install.sh
    ```
 
 2. Script şu işlemleri gerçekleştirir:
