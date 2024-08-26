@@ -222,10 +222,16 @@ check_mounts_before_chroot() {
     fi
 }
 
-# mkinitcpio ve GRUB yapılandırma işlemleri
 configure_mkinitcpio_and_grub() {
     log "mkinitcpio ve GRUB yapılandırması başlatılıyor..." "INFO"
     
+    # UUID'yi alıyoruz
+    uuid=$(arch-chroot /mnt blkid -s UUID -o value $part2)
+    if [ -z "$uuid" ]; then
+        log "UUID alınamadı, kurulum iptal ediliyor." "ERROR"
+        exit 1
+    fi
+
     arch-chroot /mnt /bin/bash -c "
     # mkinitcpio yapılandırması
     sed -i 's/^FILES=()/FILES=(\/crypto_keyfile.bin)/' /etc/mkinitcpio.conf
@@ -238,15 +244,8 @@ configure_mkinitcpio_and_grub() {
         exit 1
     fi
 
-    # UUID alınması
-    uuid=\$(blkid -s UUID -o value $part2)
-    if [ -z \"\$uuid\" ]; then
-        echo 'UUID alınamadı, kurulum iptal ediliyor.' >&2
-        exit 1
-    fi
-
     # GRUB yapılandırma
-    sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=\"loglevel=3 quiet cryptdevice=UUID=\$uuid:cryptdev\"/' /etc/default/grub
+    sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=\"loglevel=3 quiet cryptdevice=UUID=$uuid:cryptdev\"/' /etc/default/grub
     sed -i 's/^#GRUB_PRELOAD_MODULES=.*/GRUB_PRELOAD_MODULES=\"part_gpt part_msdos luks\"/' /etc/default/grub
     sed -i 's/^#GRUB_ENABLE_CRYPTODISK=.*/GRUB_ENABLE_CRYPTODISK=y/' /etc/default/grub
 
