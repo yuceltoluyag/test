@@ -352,77 +352,55 @@ configure_mkinitcpio_and_grub() {
 
 # Chroot içindeki yapılandırma
 configure_chroot() {
-# Renkler ve log dosyası tanımları
-LOG_FILE="/var/log/arch_install.log"
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[0;33m'
-NC='\033[0m' # Renk sıfırlama
-
-# Log fonksiyonu
-log() {
-    local msg="\$1"
-    local level="\$2"
-    local color=""
-    
-    case "\$level" in
-        INFO) color="\$GREEN" ;;
-        WARN) color="\$YELLOW" ;;
-        ERROR) color="\$RED" ;;
-    esac
-    
-    printf "\${color}%s [%s] %s\${NC}\n" "\$(date '+%Y-%m-%d %H:%M:%S')" "\$level" "\$msg" | tee -a >(sed 's/\x1b\[[0-9;]*m//g' >> "\$LOG_FILE")
-}
-
-log "Sisteme chroot ile giriliyor ve yapılandırma adımları gerçekleştiriliyor..." "INFO"
-    arch-chroot /mnt /bin/bash -e <<EOF
+    log "Sisteme chroot ile giriliyor ve yapılandırma adımları gerçekleştiriliyor..." "INFO"
+    arch-chroot /mnt /bin/bash <<'EOF'
 # Zaman dilimi ayarlama
-log "Zaman dilimi ayarlanıyor: Europe/Istanbul" "INFO"
-ln -sf /usr/share/zoneinfo/Europe/Istanbul /etc/localtime || log "Zaman dilimi ayarlanamadı." "ERROR"
-hwclock --systohc || log "Donanım saati ayarlanamadı." "ERROR"
+ln -sf /usr/share/zoneinfo/Europe/Istanbul /etc/localtime
+hwclock --systohc
 
 # Konsol fontu ve klavye düzeni ayarlama
-log "Konsol fontu ve klavye düzeni ayarlanıyor..." "INFO"
-echo "FONT=ter-v24n" > /etc/vconsole.conf || log "Konsol fontu ayarlanamadı." "ERROR"
-echo "KEYMAP=trq" >> /etc/vconsole.conf || log "Klavye düzeni ayarlanamadı." "ERROR"
+echo "FONT=ter-v24n" > /etc/vconsole.conf
+echo "KEYMAP=trq" >> /etc/vconsole.conf
 
 # Locale ayarlama
-log "Yerel ayarları yapılandırılıyor..." "INFO"
-sed -i "s/^#\(tr_TR.UTF-8\)/\1/" /etc/locale.gen || log "tr_TR.UTF-8 yerel ayarı etkinleştirilemedi." "ERROR"
-sed -i "s/^#\(en_US.UTF-8\)/\1/" /etc/locale.gen || log "en_US.UTF-8 yerel ayarı etkinleştirilemedi." "ERROR"
-echo "LANG=tr_TR.UTF-8" > /etc/locale.conf || log "LANG ayarlanamadı." "ERROR"
-echo "LC_MESSAGES=en_US.UTF-8" >> /etc/locale.conf || log "LC_MESSAGES ayarlanamadı." "ERROR"
-echo "LC_ADDRESS=tr_TR.UTF-8" >> /etc/locale.conf || log "LC_ADDRESS ayarlanamadı." "ERROR"
-echo "LC_COLLATE=tr_TR.UTF-8" >> /etc/locale.conf || log "LC_COLLATE ayarlanamadı." "ERROR"
-echo "LC_CTYPE=tr_TR.UTF-8" >> /etc/locale.conf || log "LC_CTYPE ayarlanamadı." "ERROR"
-echo "LC_IDENTIFICATION=tr_TR.UTF-8" >> /etc/locale.conf || log "LC_IDENTIFICATION ayarlanamadı." "ERROR"
-echo "LC_MEASUREMENT=tr_TR.UTF-8" >> /etc/locale.conf || log "LC_MEASUREMENT ayarlanamadı." "ERROR"
-echo "LC_MONETARY=tr_TR.UTF-8" >> /etc/locale.conf || log "LC_MONETARY ayarlanamadı." "ERROR"
-echo "LC_NAME=tr_TR.UTF-8" >> /etc/locale.conf || log "LC_NAME ayarlanamadı." "ERROR"
-echo "LC_NUMERIC=tr_TR.UTF-8" >> /etc/locale.conf || log "LC_NUMERIC ayarlanamadı." "ERROR"
-echo "LC_PAPER=tr_TR.UTF-8" >> /etc/locale.conf || log "LC_PAPER ayarlanamadı." "ERROR"
-echo "LC_TELEPHONE=tr_TR.UTF-8" >> /etc/locale.conf || log "LC_TELEPHONE ayarlanamadı." "ERROR"
-echo "LC_TIME=tr_TR.UTF-8" >> /etc/locale.conf || log "LC_TIME ayarlanamadı." "ERROR"
-locale-gen || log "Yerel ayar dosyaları oluşturulamadı." "ERROR"
+sed -i "s/^#\(tr_TR.UTF-8\)/\1/" /etc/locale.gen
+sed -i "s/^#\(en_US.UTF-8\)/\1/" /etc/locale.gen
+echo "LANG=tr_TR.UTF-8" > /etc/locale.conf
+echo "LC_MESSAGES=en_US.UTF-8" >> /etc/locale.conf
+echo "LC_ADDRESS=tr_TR.UTF-8" >> /etc/locale.conf
+echo "LC_COLLATE=tr_TR.UTF-8" >> /etc/locale.conf
+echo "LC_CTYPE=tr_TR.UTF-8" >> /etc/locale.conf
+echo "LC_IDENTIFICATION=tr_TR.UTF-8" >> /etc/locale.conf
+echo "LC_MEASUREMENT=tr_TR.UTF-8" >> /etc/locale.conf
+echo "LC_MONETARY=tr_TR.UTF-8" >> /etc/locale.conf
+echo "LC_NAME=tr_TR.UTF-8" >> /etc/locale.conf
+echo "LC_NUMERIC=tr_TR.UTF-8" >> /etc/locale.conf
+echo "LC_PAPER=tr_TR.UTF-8" >> /etc/locale.conf
+echo "LC_TELEPHONE=tr_TR.UTF-8" >> /etc/locale.conf
+echo "LC_TIME=tr_TR.UTF-8" >> /etc/locale.conf
+locale-gen
 
 # Varsayılan editör ayarlama
-log "Varsayılan editör ayarlanıyor: nvim" "INFO"
-echo "EDITOR=nvim" > /etc/environment || log "EDITOR ayarlanamadı." "ERROR"
-echo "VISUAL=nvim" >> /etc/environment || log "VISUAL ayarlanamadı." "ERROR"
+echo "EDITOR=nvim" > /etc/environment
+echo "VISUAL=nvim" >> /etc/environment
 
 # NetworkManager etkinleştirme
-log "NetworkManager etkinleştiriliyor..." "INFO"
-systemctl enable NetworkManager || log "NetworkManager etkinleştirilemedi." "ERROR"
+systemctl enable NetworkManager
 
 # SSH sunucusu etkinleştirme
-log "SSH sunucusu etkinleştiriliyor..." "INFO"
-systemctl enable sshd.service || log "SSH sunucusu etkinleştirilemedi." "ERROR"
-
-# mkinitcpio yapılandırma ve GRUB ayarları
+systemctl enable sshd.service
 EOF
 
+    if [ $? -eq 0 ]; then
+        log "Chroot içi yapılandırma başarıyla tamamlandı." "INFO"
+    else
+        log "Chroot içi yapılandırmada bir hata oluştu." "ERROR"
+    fi
+
+    # mkinitcpio ve GRUB yapılandırmasını ayrı bir fonksiyonda yapıyoruz.
     configure_mkinitcpio_and_grub
 }
+
 
 # Chroot'tan çıkış ve sistemin yeniden başlatılması
 finalize_installation() {
