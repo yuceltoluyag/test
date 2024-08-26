@@ -23,31 +23,38 @@ enable_services() {
     done
 }
 
-# Fonksiyonlar
 install_packages() {
-    local packages=("$@")
-    for package in "${packages[@]}"; do
-        if ! pacman -Qi "$package" > /dev/null 2>&1; then
-            print_message "$package kuruluyor..."
-            if ! sudo pacman -S --noconfirm "$package"; then
-                print_message "$package pacman ile bulunamadı, yay ile deneniyor..."
-                
-                # Yay kurulu değilse, install_aur_helper çalıştırılır.
-                if ! command -v yay > /dev/null 2>&1; then
-                    print_message "Yay AUR yardımcı programı kurulmamış. Kurulum yapılıyor..."
-                    install_aur_helper
-                fi
+    local missing_packages=()
 
-                # Yay kurulumu tamamlandıktan sonra tekrar paketi yüklemeyi deniyoruz.
-                if ! yay -S --noconfirm "$package"; then
-                    echo -e "${RED}$package hem pacman hem de yay ile kurulamadı.${NC}"
-                fi
-            fi
-        else
-            echo -e "${GREEN}$package zaten yüklü.${NC}"
+    # Eksik olan paketleri bul ve listeye ekle
+    for package in "$@"; do
+        if ! pacman -Qi "$package" > /dev/null 2>&1; then
+            missing_packages+=("$package")
         fi
     done
+
+    # Pacman ile eksik paketleri yükle
+    if [ ${#missing_packages[@]} -ne 0 ]; then
+        print_message "Eksik paketler yükleniyor: ${missing_packages[*]}"
+        if ! sudo pacman -S --noconfirm "${missing_packages[@]}"; then
+            print_message "Pacman ile yüklenemeyen paketler var. Yay ile deneniyor..."
+
+            # Yay kurulu değilse, install_aur_helper çalıştırılır.
+            if ! command -v yay > /dev/null 2>&1; then
+                print_message "Yay AUR yardımcı programı kurulmamış. Kurulum yapılıyor..."
+                install_aur_helper
+            fi
+
+            # Yay ile eksik paketleri yükle
+            if ! yay -S --noconfirm "${missing_packages[@]}"; then
+                echo -e "${RED}Bazı paketler hem pacman hem de yay ile yüklenemedi.${NC}"
+            fi
+        fi
+    else
+        echo -e "${GREEN}Tüm paketler zaten yüklü.${NC}"
+    fi
 }
+
 
 # Tüm paketlerin tek listede toplanması
 packages=(
@@ -69,7 +76,7 @@ configure_snapper() {
     print_message "Yeni Snapper yapılandırması oluşturuluyor..."
     sudo snapper -c root create-config /
 
-    # Snapper'in oluşturduğu .snapshots subvolume'unu silme
+    # Snapper'ın oluşturduğu .snapshots subvolume'unu silme
     sudo btrfs subvolume delete .snapshots
 
     # Yeni mount point oluşturma ve yeniden mount etme
@@ -80,9 +87,9 @@ configure_snapper() {
     sudo chmod 750 /.snapshots
     sudo chown :wheel /.snapshots
 
-    # Snapper otomatik timeline snapshot'ları yapılandırma
+    # Snapper otomatik timeline snapshot'ları yapılandırma (dinamik kullanıcı)
     print_message "Snapper otomatik timeline snapshot'ları yapılandırılıyor..."
-    sudo sed -i 's/^ALLOW_USERS=""/ALLOW_USERS="foo"/' /etc/snapper/configs/root
+    sudo sed -i "s/^ALLOW_USERS=\"\"/ALLOW_USERS=\"$USER\"/" /etc/snapper/configs/root
     sudo sed -i 's/^TIMELINE_MIN_AGE=.*/TIMELINE_MIN_AGE="1800"/' /etc/snapper/configs/root
     sudo sed -i 's/^TIMELINE_LIMIT_HOURLY=.*/TIMELINE_LIMIT_HOURLY="5"/' /etc/snapper/configs/root
     sudo sed -i 's/^TIMELINE_LIMIT_DAILY=.*/TIMELINE_LIMIT_DAILY="7"/' /etc/snapper/configs/root
@@ -97,12 +104,12 @@ configure_snapper() {
     # Grub-btrfs kurulumu ve yapılandırılması
     print_message "Grub-btrfs kuruluyor ve yapılandırılıyor..."
     install_packages grub-btrfs
-    sudo sed -i 's|^GRUB_BTRFS_GRUB_DIRNAME=.*|GRUB_BTRFS_GRUB_DIRNAME="/efi/grub"|' /etc/default/grub-btrfs/config
+    sudo sed -i 's|^#GRUB_BTRFS_GRUB_DIRNAME=.*|GRUB_BTRFS_GRUB_DIRNAME="/efi/grub"|' /etc/default/grub-btrfs/config
     sudo systemctl enable --now grub-btrfs.path
 
     # Grub-btrfs için overlayfs yapılandırması
     print_message "Grub-btrfs için overlayfs yapılandırılıyor..."
-    sudo sed -i 's/^HOOKS=(.*/& grub-btrfs-overlayfs/' /etc/mkinitcpio.conf
+    sudo sed -i 's/^HOOKS=(\(.*\))/HOOKS=(\1 grub-btrfs overlayfs)/' /etc/mkinitcpio.conf
     sudo mkinitcpio -P
 }
 
