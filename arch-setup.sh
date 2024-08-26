@@ -13,8 +13,19 @@ NC='\033[0m' # Renk sıfırlama
 log() {
     local msg="$1"
     local level="$2"
-    printf "%s [%s] %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$level" "$msg" | tee -a "$LOG_FILE" >&2
+    local color=""
+
+    # Mesaj seviyesine göre renk belirleme
+    case "$level" in
+        INFO) color="$GREEN" ;;
+        WARN) color="$YELLOW" ;;
+        ERROR) color="$RED" ;;
+    esac
+
+    # Ekrana renkli çıktı, log dosyasına renksiz çıktı
+    printf "${color}%s [%s] %s${NC}\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$level" "$msg" | tee -a "$LOG_FILE" | sed 's/\x1b\[[0-9;]*m//g' >> "$LOG_FILE"
 }
+
 
 # Terminus font yükleme ve ayarlama
 install_font() {
