@@ -63,12 +63,11 @@ virt_check() {
             systemctl enable hv_vss_daemon --root=/mnt &>/dev/null
             ;;
         * ) 
-            log "Sanallaştırma tespit edilmedi veya desteklenmeyen bir sanallaştırma platformu tespit edildi." "WARN"
+            log "Sanallaştırma tespit edilmedi veya desteklenmeyen bir sanallaştırma platformu tespit edildi. Devam ediyor..." "INFO"
             ;;
     esac
 }
 
-# Keyfile oluşturma ve LUKS'e ekleme (arch-chroot dışı)
 setup_keyfile() {
     log "Keyfile oluşturuluyor..." "INFO"
     dd_output=$(dd bs=512 count=4 iflag=fullblock if=/dev/random of=/crypto_keyfile.bin 2>&1)
@@ -79,17 +78,30 @@ setup_keyfile() {
         log "Keyfile oluşturulurken bir hata meydana geldi: $dd_output" "ERROR"
         exit 1
     fi
-    chmod 600 /crypto_keyfile.bin
+
     log "Keyfile LUKS'e ekleniyor..." "INFO"
-    cryptsetup luksAddKey $part2 /crypto_keyfile.bin || log "Keyfile ekleme işlemi başarısız oldu." "ERROR"
+    cryptsetup luksAddKey $part2 /crypto_keyfile.bin || { log "Keyfile ekleme işlemi başarısız oldu." "ERROR"; exit 1; }
+}
+
+
+
+set_hostname() {
+    local hostname
+    read -r -p "Lütfen hostname adını girin: " hostname
+    echo "$hostname" > /mnt/etc/hostname
+    cat > /mnt/etc/hosts <<EOF
+127.0.0.1   localhost
+::1         localhost
+127.0.1.1   $hostname.localdomain   $hostname
+EOF
+    log "Hostname başarıyla ayarlandı: $hostname" "INFO"
 }
 
 # Klavye düzeni seçimi
 select_keyboard_layout() {
     log "Mevcut klavye düzenleri listeleniyor..." "INFO"
-    available_layouts=$(localectl list-keymaps | less)
-    
-    echo "$available_layouts" | less  # Uzun listeyi sayfa sayfa gösterir
+    available_layouts=$(localectl list-keymaps | grep -E 'trq|us|uk|de')
+    echo "$available_layouts" | less
 
     read -p "Lütfen bir klavye düzeni seçin (Varsayılan: trq): " keyboard_layout
     keyboard_layout=${keyboard_layout:-trq}
@@ -130,12 +142,12 @@ select_disk() {
     log "Kurulum için kullanılacak disk seçiliyor..." "INFO"
     
     # Kullanılabilir diskleri listeleme
-    PS3="Lütfen kurulumu yapacağınız diskin numarasını seçin: "
+    PS3="Lütfen kurulumu yapacağınız diskin numarasını seçin (örn: 1, 2, 3): "
     disks=$(lsblk -dpnoNAME | grep -P "/dev/sd|/dev/nvme|/dev/vd")
 
     select disk in $disks; do
         if [ -n "$disk" ]; then
-            log "Kurulum için $disk diski seçildi." "INFO"
+            log "Kurulum için $disk diski seçildi: $disk" "INFO"
             export disk
             setup_partitions
             break
