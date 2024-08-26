@@ -26,7 +26,6 @@ log() {
     printf "${color}%s [%s] %s${NC}\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$level" "$msg" | tee -a "$LOG_FILE" | sed 's/\x1b\[[0-9;]*m//g' >> "$LOG_FILE"
 }
 
-
 # Terminus font yükleme ve ayarlama
 install_font() {
     log "Terminus fontu yükleniyor..." "INFO"
@@ -36,11 +35,46 @@ install_font() {
     setfont ter-v24n || log "Font ayarlanamadı." "ERROR"
 }
 
+# Sanallaştırma kontrolü (Virtualization check)
+virt_check() {
+    hypervisor=$(systemd-detect-virt)
+    case $hypervisor in
+        kvm )   
+            log "KVM tespit edildi, misafir araçları kuruluyor..." "INFO"
+            pacstrap /mnt qemu-guest-agent &>/dev/null
+            systemctl enable qemu-guest-agent --root=/mnt &>/dev/null
+            ;;
+        vmware )   
+            log "VMWare Workstation/ESXi tespit edildi, misafir araçları kuruluyor..." "INFO"
+            pacstrap /mnt open-vm-tools &>/dev/null
+            systemctl enable vmtoolsd --root=/mnt &>/dev/null
+            systemctl enable vmware-vmblock-fuse --root=/mnt &>/dev/null
+            ;;
+        oracle )    
+            log "VirtualBox tespit edildi, misafir araçları kuruluyor..." "INFO"
+            pacstrap /mnt virtualbox-guest-utils &>/dev/null
+            systemctl enable vboxservice --root=/mnt &>/dev/null
+            ;;
+        microsoft ) 
+            log "Hyper-V tespit edildi, misafir araçları kuruluyor..." "INFO"
+            pacstrap /mnt hyperv &>/dev/null
+            systemctl enable hv_fcopy_daemon --root=/mnt &>/dev/null
+            systemctl enable hv_kvp_daemon --root=/mnt &>/dev/null
+            systemctl enable hv_vss_daemon --root=/mnt &>/dev/null
+            ;;
+        * ) 
+            log "Sanallaştırma tespit edilmedi veya desteklenmeyen bir sanallaştırma platformu tespit edildi." "WARN"
+            ;;
+    esac
+}
+
+
 # Klavye düzeni seçimi
 select_keyboard_layout() {
     log "Mevcut klavye düzenleri listeleniyor..." "INFO"
-    available_layouts=$(localectl list-keymaps)
-    echo "$available_layouts" | column
+    available_layouts=$(localectl list-keymaps | less)
+    
+    echo "$available_layouts" | less  # Uzun listeyi sayfa sayfa gösterir
 
     read -p "Lütfen bir klavye düzeni seçin (Varsayılan: trq): " keyboard_layout
     keyboard_layout=${keyboard_layout:-trq}
@@ -53,6 +87,7 @@ select_keyboard_layout() {
         loadkeys trq || log "Varsayılan klavye düzeni yüklenemedi." "ERROR"
     fi
 }
+
 
 # UEFI mod kontrolü
 check_uefi_mode() {
@@ -78,19 +113,23 @@ setup_partitions() {
 # Disk seçimi ve türüne göre partisyon ayarlama
 select_disk() {
     log "Kurulum için kullanılacak disk seçiliyor..." "INFO"
-    lsblk -f
-    while true; do
-        read -p "Lütfen kurulumu yapacağınız diski tam adıyla girin (örn: /dev/sda, /dev/nvme0n1): " disk
-        if [ -b "$disk" ]; then
+    
+    # Kullanılabilir diskleri listeleme
+    PS3="Lütfen kurulumu yapacağınız diskin numarasını seçin: "
+    disks=$(lsblk -dpnoNAME | grep -P "/dev/sd|/dev/nvme|/dev/vd")
+
+    select disk in $disks; do
+        if [ -n "$disk" ]; then
             log "Kurulum için $disk diski seçildi." "INFO"
             export disk
             setup_partitions
             break
         else
-            log "Geçersiz bir disk adı girdiniz. Lütfen tekrar deneyin." "ERROR"
+            log "Geçersiz bir seçim yaptınız. Lütfen tekrar deneyin." "ERROR"
         fi
     done
 }
+
 
 # Bölüm silme ve yeniden yapılandırma
 configure_partitions() {
@@ -287,53 +326,56 @@ configure_chroot() {
     log "Sisteme chroot ile giriliyor ve yapılandırma adımları gerçekleştiriliyor..." "INFO"
     arch-chroot /mnt /bin/bash -e <<EOF
 # Zaman dilimi ayarlama
-ln -sf /usr/share/zoneinfo/Europe/Istanbul /etc/localtime
-hwclock --systohc
+log "Zaman dilimi ayarlanıyor: Europe/Istanbul" "INFO"
+ln -sf /usr/share/zoneinfo/Europe/Istanbul /etc/localtime || log "Zaman dilimi ayarlanamadı." "ERROR"
+hwclock --systohc || log "Donanım saati ayarlanamadı." "ERROR"
 
-# Hostname ayarlama
-read -p "Lütfen hostname adını girin: " hostname
-echo "$hostname" > /etc/hostname
-cat > /etc/hosts <<EOL
-127.0.0.1   localhost
-::1         localhost
-127.0.1.1   $hostname.localdomain $hostname
-EOL
-
-echo "FONT=ter-v24n" > /etc/vconsole.conf
-echo "KEYMAP=trq" >> /etc/vconsole.conf
+# Konsol fontu ve klavye düzeni ayarlama
+log "Konsol fontu ve klavye düzeni ayarlanıyor..." "INFO"
+echo "FONT=ter-v24n" > /etc/vconsole.conf || log "Konsol fontu ayarlanamadı." "ERROR"
+echo "KEYMAP=trq" >> /etc/vconsole.conf || log "Klavye düzeni ayarlanamadı." "ERROR"
 
 # Locale ayarlama
-sed -i "s/^#\(tr_TR.UTF-8\)/\1/" /etc/locale.gen
-sed -i "s/^#\(en_US.UTF-8\)/\1/" /etc/locale.gen
-echo "LANG=tr_TR.UTF-8" > /etc/locale.conf
-echo "LC_MESSAGES=en_US.UTF-8" >> /etc/locale.conf
-echo "LC_ADDRESS=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_COLLATE=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_CTYPE=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_IDENTIFICATION=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_MEASUREMENT=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_MONETARY=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_NAME=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_NUMERIC=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_PAPER=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_TELEPHONE=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_TIME=tr_TR.UTF-8" >> /etc/locale.conf
-locale-gen
+log "Yerel ayarları yapılandırılıyor..." "INFO"
+sed -i "s/^#\(tr_TR.UTF-8\)/\1/" /etc/locale.gen || log "tr_TR.UTF-8 yerel ayarı etkinleştirilemedi." "ERROR"
+sed -i "s/^#\(en_US.UTF-8\)/\1/" /etc/locale.gen || log "en_US.UTF-8 yerel ayarı etkinleştirilemedi." "ERROR"
+echo "LANG=tr_TR.UTF-8" > /etc/locale.conf || log "LANG ayarlanamadı." "ERROR"
+echo "LC_MESSAGES=en_US.UTF-8" >> /etc/locale.conf || log "LC_MESSAGES ayarlanamadı." "ERROR"
+echo "LC_ADDRESS=tr_TR.UTF-8" >> /etc/locale.conf || log "LC_ADDRESS ayarlanamadı." "ERROR"
+echo "LC_COLLATE=tr_TR.UTF-8" >> /etc/locale.conf || log "LC_COLLATE ayarlanamadı." "ERROR"
+echo "LC_CTYPE=tr_TR.UTF-8" >> /etc/locale.conf || log "LC_CTYPE ayarlanamadı." "ERROR"
+echo "LC_IDENTIFICATION=tr_TR.UTF-8" >> /etc/locale.conf || log "LC_IDENTIFICATION ayarlanamadı." "ERROR"
+echo "LC_MEASUREMENT=tr_TR.UTF-8" >> /etc/locale.conf || log "LC_MEASUREMENT ayarlanamadı." "ERROR"
+echo "LC_MONETARY=tr_TR.UTF-8" >> /etc/locale.conf || log "LC_MONETARY ayarlanamadı." "ERROR"
+echo "LC_NAME=tr_TR.UTF-8" >> /etc/locale.conf || log "LC_NAME ayarlanamadı." "ERROR"
+echo "LC_NUMERIC=tr_TR.UTF-8" >> /etc/locale.conf || log "LC_NUMERIC ayarlanamadı." "ERROR"
+echo "LC_PAPER=tr_TR.UTF-8" >> /etc/locale.conf || log "LC_PAPER ayarlanamadı." "ERROR"
+echo "LC_TELEPHONE=tr_TR.UTF-8" >> /etc/locale.conf || log "LC_TELEPHONE ayarlanamadı." "ERROR"
+echo "LC_TIME=tr_TR.UTF-8" >> /etc/locale.conf || log "LC_TIME ayarlanamadı." "ERROR"
+locale-gen || log "Yerel ayar dosyaları oluşturulamadı." "ERROR"
 
 # Varsayılan editör ayarlama
-echo "EDITOR=nvim" > /etc/environment
-echo "VISUAL=nvim" >> /etc/environment
+log "Varsayılan editör ayarlanıyor: nvim" "INFO"
+echo "EDITOR=nvim" > /etc/environment || log "EDITOR ayarlanamadı." "ERROR"
+echo "VISUAL=nvim" >> /etc/environment || log "VISUAL ayarlanamadı." "ERROR"
 
 # NetworkManager etkinleştirme
-systemctl enable NetworkManager
+log "NetworkManager etkinleştiriliyor..." "INFO"
+systemctl enable NetworkManager || log "NetworkManager etkinleştirilemedi." "ERROR"
 
 # SSH sunucusu etkinleştirme
-systemctl enable sshd.service
+log "SSH sunucusu etkinleştiriliyor..." "INFO"
+systemctl enable sshd.service || log "SSH sunucusu etkinleştirilemedi." "ERROR"
+
 
 # Keyfile oluşturma ve LUKS'e ekleme
-dd bs=512 count=4 iflag=fullblock if=/dev/random of=/crypto_keyfile.bin
-chmod 600 /crypto_keyfile.bin
-cryptsetup luksAddKey $part2 /crypto_keyfile.bin
+log "Keyfile oluşturuluyor..." "INFO"
+dd bs=512 count=4 iflag=fullblock if=/dev/random of=/crypto_keyfile.bin || log "Keyfile oluşturulamadı." "ERROR"
+chmod 600 /crypto_keyfile.bin || log "Keyfile izinleri ayarlanamadı." "ERROR"
+
+log "Keyfile LUKS'e ekleniyor..." "INFO"
+cryptsetup luksAddKey $part2 /crypto_keyfile.bin || log "Keyfile LUKS'e eklenemedi." "ERROR"
+
 
 # mkinitcpio yapılandırma ve GRUB ayarları
 EOF
@@ -363,7 +405,9 @@ main() {
     setup_btrfs_subvolumes
     mount_esp
     configure_system
+    virt_check
     check_mounts_before_chroot
+    set_hostname
     configure_chroot
     read -r -p "Lütfen bir kullanıcı hesabı için ad girin: " username
     set_user_and_password "$username"
