@@ -26,6 +26,7 @@ log() {
     printf "${color}%s [%s] %s${NC}\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$level" "$msg" | tee -a >(sed 's/\x1b\[[0-9;]*m//g' >> "$LOG_FILE")
 }
 
+
 # Terminus font yükleme ve ayarlama
 install_font() {
     log "Terminus fontu yükleniyor..." "INFO"
@@ -70,9 +71,9 @@ virt_check() {
 
 setup_keyfile() {
     log "Keyfile oluşturuluyor..." "INFO"
-    dd_output=$(dd bs=512 count=4 iflag=fullblock if=/dev/random of=/crypto_keyfile.bin 2>&1)
+    dd_output=$(dd bs=512 count=4 iflag=fullblock if=/dev/random of=/mnt/crypto_keyfile.bin 2>&1)
     if echo "$dd_output" | grep -q "records in"; then
-        chmod 600 /crypto_keyfile.bin
+        chmod 600 /mnt/crypto_keyfile.bin
         log "Keyfile başarıyla oluşturuldu." "INFO"
     else
         log "Keyfile oluşturulurken bir hata meydana geldi: $dd_output" "ERROR"
@@ -80,8 +81,9 @@ setup_keyfile() {
     fi
 
     log "Keyfile LUKS'e ekleniyor..." "INFO"
-    cryptsetup luksAddKey $part2 /crypto_keyfile.bin || { log "Keyfile ekleme işlemi başarısız oldu." "ERROR"; exit 1; }
+    cryptsetup luksAddKey $part2 /mnt/crypto_keyfile.bin || { log "Keyfile ekleme işlemi başarısız oldu." "ERROR"; exit 1; }
 }
+
 
 
 
@@ -350,7 +352,29 @@ configure_mkinitcpio_and_grub() {
 
 # Chroot içindeki yapılandırma
 configure_chroot() {
-    log "Sisteme chroot ile giriliyor ve yapılandırma adımları gerçekleştiriliyor..." "INFO"
+# Renkler ve log dosyası tanımları
+LOG_FILE="/var/log/arch_install.log"
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+NC='\033[0m' # Renk sıfırlama
+
+# Log fonksiyonu
+log() {
+    local msg="\$1"
+    local level="\$2"
+    local color=""
+    
+    case "\$level" in
+        INFO) color="\$GREEN" ;;
+        WARN) color="\$YELLOW" ;;
+        ERROR) color="\$RED" ;;
+    esac
+    
+    printf "\${color}%s [%s] %s\${NC}\n" "\$(date '+%Y-%m-%d %H:%M:%S')" "\$level" "\$msg" | tee -a >(sed 's/\x1b\[[0-9;]*m//g' >> "\$LOG_FILE")
+}
+
+log "Sisteme chroot ile giriliyor ve yapılandırma adımları gerçekleştiriliyor..." "INFO"
     arch-chroot /mnt /bin/bash -e <<EOF
 # Zaman dilimi ayarlama
 log "Zaman dilimi ayarlanıyor: Europe/Istanbul" "INFO"
