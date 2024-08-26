@@ -188,6 +188,7 @@ set_user_and_password() {
     else
         arch-chroot /mnt useradd -m -G wheel -s /bin/bash "$user" || log "Kullanıcı $user oluşturulamadı." "ERROR"
     fi
+    sed -i "s/# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/" /etc/sudoers
 
     while true; do
         read -r -s -p "$user için bir şifre belirleyin: " pass
@@ -280,11 +281,11 @@ hwclock --systohc
 
 # Hostname ayarlama
 read -p "Lütfen hostname adını girin: " hostname
-echo "\$hostname" > /etc/hostname
+echo "$hostname" > /etc/hostname
 cat > /etc/hosts <<EOL
 127.0.0.1   localhost
 ::1         localhost
-127.0.1.1   \$hostname.localdomain \$hostname
+127.0.1.1   $hostname.localdomain $hostname
 EOL
 
 echo "FONT=ter-v24n" > /etc/vconsole.conf
@@ -295,6 +296,17 @@ sed -i "s/^#\(tr_TR.UTF-8\)/\1/" /etc/locale.gen
 sed -i "s/^#\(en_US.UTF-8\)/\1/" /etc/locale.gen
 echo "LANG=tr_TR.UTF-8" > /etc/locale.conf
 echo "LC_MESSAGES=en_US.UTF-8" >> /etc/locale.conf
+echo "LC_ADDRESS=tr_TR.UTF-8" >> /etc/locale.conf
+echo "LC_COLLATE=tr_TR.UTF-8" >> /etc/locale.conf
+echo "LC_CTYPE=tr_TR.UTF-8" >> /etc/locale.conf
+echo "LC_IDENTIFICATION=tr_TR.UTF-8" >> /etc/locale.conf
+echo "LC_MEASUREMENT=tr_TR.UTF-8" >> /etc/locale.conf
+echo "LC_MONETARY=tr_TR.UTF-8" >> /etc/locale.conf
+echo "LC_NAME=tr_TR.UTF-8" >> /etc/locale.conf
+echo "LC_NUMERIC=tr_TR.UTF-8" >> /etc/locale.conf
+echo "LC_PAPER=tr_TR.UTF-8" >> /etc/locale.conf
+echo "LC_TELEPHONE=tr_TR.UTF-8" >> /etc/locale.conf
+echo "LC_TIME=tr_TR.UTF-8" >> /etc/locale.conf
 locale-gen
 
 # Varsayılan editör ayarlama
