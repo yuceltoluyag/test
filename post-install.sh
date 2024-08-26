@@ -11,16 +11,17 @@ print_message() {
     echo -e "${YELLOW}$1${NC}"
 }
 
-enable_services() {
-    local services=("$@")
-    for service in "${services[@]}"; do
-        if ! systemctl is-enabled "$service" > /dev/null 2>&1; then
-            print_message "$service etkinleştiriliyor..."
-            sudo systemctl enable --now "$service"
-        else
-            echo -e "${GREEN}$service zaten etkin.${NC}"
-        fi
-    done
+install_aur_helper() {
+    print_message "Yay AUR yardımcı programı kuruluyor..."
+    if ! command -v yay > /dev/null 2>&1; then
+        git clone https://aur.archlinux.org/yay-git.git
+        cd yay-git || { print_message "Dizin değiştirilemedi, script sonlandırılıyor."; exit 1; }
+        makepkg -si --noconfirm
+        cd ..
+        rm -rf yay-git
+    else
+        echo -e "${GREEN}Yay zaten yüklü.${NC}"
+    fi
 }
 
 install_packages() {
@@ -55,7 +56,17 @@ install_packages() {
     fi
 }
 
-
+enable_services() {
+    local services=("$@")
+    for service in "${services[@]}"; do
+        if ! systemctl is-enabled "$service" > /dev/null 2>&1; then
+            print_message "$service etkinleştiriliyor..."
+            sudo systemctl enable --now "$service"
+        else
+            echo -e "${GREEN}$service zaten etkin.${NC}"
+        fi
+    done
+}
 # Tüm paketlerin tek listede toplanması
 packages=(
     dbus intel-ucode fuse2 lshw powertop inxi acpi base-devel git zip unzip htop tree w3m dialog reflector bash-completion arandr iw
@@ -86,10 +97,11 @@ configure_snapper() {
     # Yetkilendirme ve izinler
     sudo chmod 750 /.snapshots
     sudo chown :wheel /.snapshots
+    CURRENT_USER=$(logname) # Dinamik kullanıcı tespiti
 
     # Snapper otomatik timeline snapshot'ları yapılandırma (dinamik kullanıcı)
     print_message "Snapper otomatik timeline snapshot'ları yapılandırılıyor..."
-    sudo sed -i "s/^ALLOW_USERS=\"\"/ALLOW_USERS=\"$USER\"/" /etc/snapper/configs/root
+    sudo sed -i "s/^ALLOW_USERS=\"\"/ALLOW_USERS=\"$CURRENT_USER\"/" /etc/snapper/configs/root
     sudo sed -i 's/^TIMELINE_MIN_AGE=.*/TIMELINE_MIN_AGE="1800"/' /etc/snapper/configs/root
     sudo sed -i 's/^TIMELINE_LIMIT_HOURLY=.*/TIMELINE_LIMIT_HOURLY="5"/' /etc/snapper/configs/root
     sudo sed -i 's/^TIMELINE_LIMIT_DAILY=.*/TIMELINE_LIMIT_DAILY="7"/' /etc/snapper/configs/root
@@ -203,18 +215,7 @@ setup_command_not_found() {
     exec bash
 }
 
-install_aur_helper() {
-    print_message "Yay AUR yardımcı programı kuruluyor..."
-    if ! command -v yay > /dev/null 2>&1; then
-        git clone https://aur.archlinux.org/yay-git.git
-        cd yay-git || { print_message "Dizin değiştirilemedi, script sonlandırılıyor."; exit 1; }
-        makepkg -si --noconfirm
-        cd ..
-        rm -rf yay-git
-    else
-        echo -e "${GREEN}Yay zaten yüklü.${NC}"
-    fi
-}
+
 
 # Diğer yapılandırmalar (Fonksiyonlar burada kalmaya devam edecek)
 enable_trim
