@@ -222,6 +222,55 @@ check_mounts_before_chroot() {
     fi
 }
 
+# mkinitcpio ve GRUB yapılandırma işlemleri
+configure_mkinitcpio_and_grub() {
+    log "mkinitcpio ve GRUB yapılandırması başlatılıyor..." "INFO"
+    
+    arch-chroot /mnt /bin/bash -c "
+    # mkinitcpio yapılandırması
+    sed -i 's/^FILES=()/FILES=(\/crypto_keyfile.bin)/' /etc/mkinitcpio.conf
+    sed -i 's/^MODULES=()/MODULES=(btrfs)/' /etc/mkinitcpio.conf
+    sed -i 's/^HOOKS=.*/HOOKS=(base udev keyboard autodetect keymap consolefont modconf block encrypt filesystems fsck)/' /etc/mkinitcpio.conf
+
+    # mkinitcpio güncellemesi
+    if ! mkinitcpio -P; then
+        echo 'mkinitcpio güncellemesi başarısız.' >&2
+        exit 1
+    fi
+
+    # UUID alınması
+    uuid=\$(blkid -s UUID -o value $part2)
+    if [ -z \"\$uuid\" ]; then
+        echo 'UUID alınamadı, kurulum iptal ediliyor.' >&2
+        exit 1
+    fi
+
+    # GRUB yapılandırma
+    sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=\"loglevel=3 quiet cryptdevice=UUID=\$uuid:cryptdev\"/' /etc/default/grub
+    sed -i 's/^#GRUB_PRELOAD_MODULES=.*/GRUB_PRELOAD_MODULES=\"part_gpt part_msdos luks\"/' /etc/default/grub
+    sed -i 's/^#GRUB_ENABLE_CRYPTODISK=.*/GRUB_ENABLE_CRYPTODISK=y/' /etc/default/grub
+
+    # GRUB kurulumu ve yapılandırması
+    grub-install --target=x86_64-efi --efi-directory=/efi --boot-directory=/efi --bootloader-id=GRUB
+    if [ \$? -ne 0 ]; then
+        echo 'GRUB kurulumu başarısız oldu.' >&2
+        exit 1
+    fi
+    grub-mkconfig -o /efi/grub/grub.cfg
+    if [ \$? -ne 0 ]; then
+        echo 'GRUB yapılandırması başarısız oldu.' >&2
+        exit 1
+    fi
+    "
+
+    if [ $? -ne 0 ]; then
+        log "mkinitcpio veya GRUB yapılandırmasında bir hata oluştu." "ERROR"
+        exit 1
+    fi
+
+    log "mkinitcpio ve GRUB başarıyla yapılandırıldı." "INFO"
+}
+
 # Chroot içindeki yapılandırma
 configure_chroot() {
     log "Sisteme chroot ile giriliyor ve yapılandırma adımları gerçekleştiriliyor..." "INFO"
@@ -261,49 +310,10 @@ dd bs=512 count=4 iflag=fullblock if=/dev/random of=/crypto_keyfile.bin
 chmod 600 /crypto_keyfile.bin
 cryptsetup luksAddKey $part2 /crypto_keyfile.bin
 
-# mkinitcpio yapılandırması ve doğrulama
-sed -i "s/^FILES=()/FILES=(\/crypto_keyfile.bin)/" /mnt/etc/mkinitcpio.conf
-sed -i "s/^MODULES=()/MODULES=(btrfs)/" /mnt/etc/mkinitcpio.conf
-sed -i "s/^HOOKS=.*/HOOKS=(base udev keyboard autodetect keymap consolefont modconf block encrypt filesystems fsck)/" /mnt/etc/mkinitcpio.conf
-
-# Doğrulama: Ayarların doğru uygulanıp uygulanmadığını kontrol et
-if grep -q "FILES=(/crypto_keyfile.bin)" /mnt/etc/mkinitcpio.conf && \
-   grep -q "MODULES=(btrfs)" /mnt/etc/mkinitcpio.conf && \
-   grep -q "HOOKS=(base udev keyboard autodetect keymap consolefont modconf block encrypt filesystems fsck)" /mnt/etc/mkinitcpio.conf; then
-    echo "mkinitcpio yapılandırması başarılı."
-else
-    echo "mkinitcpio yapılandırmasında hata var!" >&2
-    exit 1
-fi
-
-mkinitcpio -P -c /mnt/etc/mkinitcpio.conf -k /mnt/boot/vmlinuz-linux || { echo "initramfs oluşturulamadı!" >&2; exit 1; }
-
-# UUID alınması ve doğrulama
-uuid=$(blkid -s UUID -o value $part2)
-if [ -z "$uuid" ]; then
-    echo "UUID alınamadı, kurulum iptal ediliyor." >&2
-    exit 1
-fi
-
-# GRUB yapılandırma ve doğrulama
-sed -i "s/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=\"loglevel=3 quiet cryptdevice=UUID=$uuid:cryptdev\"/" /mnt/etc/default/grub
-sed -i "s/^#GRUB_PRELOAD_MODULES=.*/GRUB_PRELOAD_MODULES=\"part_gpt part_msdos luks\"/" /mnt/etc/default/grub
-sed -i "s/^#GRUB_ENABLE_CRYPTODISK=.*/GRUB_ENABLE_CRYPTODISK=y/" /mnt/etc/default/grub
-
-# Doğrulama: GRUB ayarlarının doğru olduğunu kontrol et
-if grep -q "GRUB_CMDLINE_LINUX_DEFAULT=\"loglevel=3 quiet cryptdevice=UUID=$uuid:cryptdev\"" /mnt/etc/default/grub && \
-   grep -q "GRUB_PRELOAD_MODULES=\"part_gpt part_msdos luks\"" /mnt/etc/default/grub && \
-   grep -q "GRUB_ENABLE_CRYPTODISK=y" /mnt/etc/default/grub; then
-    echo "GRUB yapılandırması başarılı."
-else
-    echo "GRUB yapılandırmasında hata var!" >&2
-    exit 1
-fi
-
-grub-install --target=x86_64-efi --efi-directory=/mnt/efi --boot-directory=/mnt/boot --bootloader-id=GRUB || { echo "GRUB kurulumu başarısız!" >&2; exit 1; }
-grub-mkconfig -o /mnt/efi/grub/grub.cfg || { echo "GRUB yapılandırma dosyası oluşturulamadı!" >&2; exit 1; }
-
+# mkinitcpio yapılandırma ve GRUB ayarları
 EOF
+
+    configure_mkinitcpio_and_grub
 }
 
 # Chroot'tan çıkış ve sistemin yeniden başlatılması
