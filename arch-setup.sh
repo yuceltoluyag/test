@@ -14,6 +14,7 @@ log() {
     local msg="$1"
     local level="$2"
     printf "%s [%s] %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$level" "$msg" | tee -a "$LOG_FILE" >&2
+    [[ "$level" == "ERROR" ]] && exit 1
 }
 
 # Terminus font yükleme ve ayarlama
@@ -31,16 +32,18 @@ select_keyboard_layout() {
     available_layouts=$(localectl list-keymaps)
     echo "$available_layouts" | column
 
-    read -p "Lütfen bir klavye düzeni seçin (Varsayılan: trq): " keyboard_layout
-    keyboard_layout=${keyboard_layout:-trq}
+    while true; do
+        read -p "Lütfen bir klavye düzeni seçin (Varsayılan: trq): " keyboard_layout
+        keyboard_layout=${keyboard_layout:-trq}
 
-    if echo "$available_layouts" | grep -qw "$keyboard_layout"; then
-        log "Klavye düzeni $keyboard_layout olarak ayarlanıyor..." "INFO"
-        loadkeys $keyboard_layout || log "Klavye düzeni yüklenemedi." "ERROR"
-    else
-        log "Hatalı klavye düzeni girdiniz! Varsayılan olarak trq ayarlanıyor..." "WARN"
-        loadkeys trq || log "Varsayılan klavye düzeni yüklenemedi." "ERROR"
-    fi
+        if echo "$available_layouts" | grep -qw "$keyboard_layout"; then
+            log "Klavye düzeni $keyboard_layout olarak ayarlanıyor..." "INFO"
+            loadkeys "$keyboard_layout" || log "Klavye düzeni yüklenemedi." "ERROR"
+            break
+        else
+            log "Hatalı klavye düzeni girdiniz! Lütfen geçerli bir düzen girin." "WARN"
+        fi
+    done
 }
 
 # UEFI mod kontrolü
@@ -50,7 +53,6 @@ check_uefi_mode() {
         log "Sistem UEFI modda önyüklenmiş." "INFO"
     else
         log "Sistem BIOS modda önyüklenmiş. Bu kurulum rehberi UEFI tabanlıdır." "ERROR"
-        exit 1
     fi
 }
 
@@ -84,24 +86,24 @@ select_disk() {
 # Bölüm silme ve yeniden yapılandırma
 configure_partitions() {
     log "Eski bölüm düzeni siliniyor..." "INFO"
-    wipefs -af $disk && sgdisk --zap-all --clear $disk && partprobe $disk || log "Eski bölüm düzeni silinirken hata oluştu." "ERROR"
+    wipefs -af "$disk" && sgdisk --zap-all --clear "$disk" && partprobe "$disk" || log "Eski bölüm düzeni silinirken hata oluştu." "ERROR"
     
     log "Disk bölümlendiriliyor..." "INFO"
-    sgdisk -n 0:0:+512MiB -t 0:ef00 -c 0:esp $disk && \
-    sgdisk -n 0:0:0 -t 0:8309 -c 0:luks $disk && \
-    partprobe $disk || log "Disk bölümlendirme başarısız." "ERROR"
+    sgdisk -n 0:0:+512MiB -t 0:ef00 -c 0:esp "$disk" && \
+    sgdisk -n 0:0:0 -t 0:8309 -c 0:luks "$disk" && \
+    partprobe "$disk" || log "Disk bölümlendirme başarısız." "ERROR"
 
-    sgdisk -p $disk
+    sgdisk -p "$disk"
 }
 
 # LUKS şifreleme ve dosya sistemlerini yapılandırma
 setup_filesystems() {
     log "${part2} bölümü LUKS1 ile şifreleniyor..." "INFO"
-    cryptsetup --type luks1 -v -y luksFormat $part2 || log "LUKS formatlama başarısız." "ERROR"
-    cryptsetup open $part2 cryptdev || log "LUKS açma işlemi başarısız." "ERROR"
+    cryptsetup --type luks1 -v -y luksFormat "$part2" || log "LUKS formatlama başarısız." "ERROR"
+    cryptsetup open "$part2" cryptdev || log "LUKS açma işlemi başarısız." "ERROR"
 
     log "ESP bölümü formatlanıyor..." "INFO"
-    mkfs.vfat -F32 -n ESP $part1 || log "ESP formatlama başarısız." "ERROR"
+    mkfs.vfat -F32 -n ESP "$part1" || log "ESP formatlama başarısız." "ERROR"
 
     log "Kök bölümü (cryptdev) BTRFS olarak formatlanıyor..." "INFO"
     mkfs.btrfs -L archlinux /dev/mapper/cryptdev || log "BTRFS formatlama başarısız." "ERROR"
@@ -142,9 +144,16 @@ setup_btrfs_subvolumes() {
 mount_esp() {
     log "ESP bölümü ${part1} /mnt/efi dizinine monte ediliyor..." "INFO"
     mkdir -p /mnt/efi
-    if ! mount ${part1} /mnt/efi; then
+    if ! mount "${part1}" /mnt/efi; then
         log "EFI bölümünü ${part1} monte etme başarısız oldu!" "ERROR"
-        exit 1
+    fi
+}
+
+# Sanallaştırma kontrolü ve ilgili paketlerin yüklenmesi
+check_virtualization() {
+    if [[ $(systemd-detect-virt) != "none" ]]; then
+        log "Sanal makine tespit edildi. İlgili paketler yükleniyor..." "INFO"
+        pacstrap /mnt qemu-guest-agent virtualbox-guest-utils
     fi
 }
 
@@ -165,11 +174,10 @@ configure_system() {
         log "AMD işlemci tespit edildi, amd-ucode seçildi." "INFO"
     else
         log "İşlemci türü tespit edilemedi, microcode paketi seçilemedi." "ERROR"
-        exit 1
     fi
 
     log "Temel sistem yükleniyor..." "INFO"
-    pacstrap /mnt --needed base base-devel ${microcode} btrfs-progs linux linux-firmware bash-completion cryptsetup htop man-db mlocate neovim networkmanager openssh pacman-contrib pkgfile reflector sudo grub efibootmgr terminus-font vim tmux || log "Temel sistem kurulumu başarısız." "ERROR"
+    pacstrap /mnt --needed base base-devel "$microcode" btrfs-progs linux linux-firmware bash-completion cryptsetup htop man-db mlocate neovim networkmanager openssh pacman-contrib pkgfile reflector sudo grub efibootmgr terminus-font vim tmux || log "Temel sistem kurulumu başarısız." "ERROR"
 
     log "fstab dosyası oluşturuluyor..." "INFO"
     genfstab -U -p /mnt >> /mnt/etc/fstab || log "fstab oluşturma başarısız." "ERROR"
@@ -189,6 +197,8 @@ set_user_and_password() {
         arch-chroot /mnt useradd -m -G wheel -s /bin/bash "$user" || log "Kullanıcı $user oluşturulamadı." "ERROR"
     fi
 
+    sed -i "s/# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/" /mnt/etc/sudoers
+
     while true; do
         read -r -s -p "$user için bir şifre belirleyin: " pass
         echo
@@ -204,9 +214,8 @@ set_user_and_password() {
             log "Şifreler eşleşmiyor, tekrar deneyin." "ERROR"
         fi
         attempts=$((attempts + 1))
-        if [ "$attempts" -ge "$retry_limit" ]; then
+        if [ "$attempts" -ge "$retry_limit" ];then
             log "Çok fazla başarısız deneme. İşlem iptal ediliyor." "ERROR"
-            exit 1
         fi
     done
 }
@@ -218,7 +227,6 @@ check_mounts_before_chroot() {
         log "Tüm montajlar başarılı." "INFO"
     else
         log "Montajlarda sorun var. Lütfen tekrar kontrol edin." "ERROR"
-        exit 1
     fi
 }
 
@@ -226,10 +234,9 @@ configure_mkinitcpio_and_grub() {
     log "mkinitcpio ve GRUB yapılandırması başlatılıyor..." "INFO"
     
     # UUID'yi alıyoruz
-    uuid=$(arch-chroot /mnt blkid -s UUID -o value $part2)
-    if [ -z "$uuid" ]; then
+    uuid=$(arch-chroot /mnt blkid -s UUID -o value "$part2")
+    if [ -z "$uuid" ];then
         log "UUID alınamadı, kurulum iptal ediliyor." "ERROR"
-        exit 1
     fi
 
     arch-chroot /mnt /bin/bash -c "
@@ -264,7 +271,6 @@ configure_mkinitcpio_and_grub() {
 
     if [ $? -ne 0 ]; then
         log "mkinitcpio veya GRUB yapılandırmasında bir hata oluştu." "ERROR"
-        exit 1
     fi
 
     log "mkinitcpio ve GRUB başarıyla yapılandırıldı." "INFO"
@@ -318,16 +324,14 @@ EOF
 # Chroot'tan çıkış ve sistemin yeniden başlatılması
 finalize_installation() {
     log "Chroot'tan çıkılıyor ve sistem yeniden başlatılıyor..." "INFO"
-    mkdir -p /mnt/home/$username/test
-    cp -r "$(pwd)"/* /mnt/home/$username/test/
-    log "Klasör içeriği /mnt/home/$username/test dizinine başarıyla kopyalandı." "INFO"
-    # Diskleri unmount etme
-    # umount -R /mnt || log "Unmount işlemi sırasında hata oluştu." "ERROR"
-    # reboot
+    umount -R /mnt || log "Unmount işlemi sırasında hata oluştu." "ERROR"
+    log "Kurulum tamamlandı, sistem yeniden başlatılıyor." "INFO"
+    reboot
 }
 
 # Tüm işlemleri başlatma
 main() {
+    set -e
     install_font
     select_keyboard_layout
     check_uefi_mode
@@ -336,6 +340,7 @@ main() {
     setup_filesystems
     setup_btrfs_subvolumes
     mount_esp
+    check_virtualization
     configure_system
     check_mounts_before_chroot
     configure_chroot
