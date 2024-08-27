@@ -150,7 +150,7 @@ check_uefi_mode() {
 
 # Disk silme (wipe) işlemi
 wipe_disk() {
-    log "DİKKAT:$disk  tamamen sıfırlanacak. Bu işlem geri alınamaz!" "WARN"
+    log "DİKKAT: $disk tamamen sıfırlanacak. Bu işlem geri alınamaz!" "WARN"
     read -p "Disk silme işlemine devam etmek istediğinizden emin misiniz? (y/N): " confirm
     if [[ "$confirm" != [yY] ]]; then
         log "Disk silme işlemi iptal edildi." "INFO"
@@ -178,9 +178,43 @@ wipe_disk() {
     log "Disk sıfırlama işlemi başarıyla tamamlandı." "INFO"
 }
 
+prompt_wipe_disk() {
+    # Kullanıcının seçtiği diskin boyutunu belirleyin
+    disk_size_bytes=$(lsblk -b -n -o SIZE $disk)  # Disk boyutunu bayt cinsinden al
+    disk_size_gb=$(echo "scale=2; $disk_size_bytes / (1024^3)" | bc)  # GB'ye çevir
+
+    # Yazma hızını otomatik olarak belirlemek için test yap
+    log "Yazma hızı otomatik olarak belirleniyor..." "INFO"
+    test_file="/tmp/testfile"
+    dd if=/dev/zero of=$test_file bs=1M count=100 oflag=dsync 2>&1 | grep -o '[0-9.]* MB/s' > /tmp/write_speed
+    writing_speed_mb_s=$(cat /tmp/write_speed | grep -o '[0-9.]*')
+
+    # Test dosyasını kaldır
+    rm -f $test_file
+
+    # Disk boyutunu MB cinsine çevir
+    disk_size_mb=$(echo "$disk_size_gb * 1024" | bc)
+    # Toplam yazma süresi (saniye cinsinden)
+    total_time_seconds=$(echo "scale=2; $disk_size_mb / $writing_speed_mb_s" | bc)
+    # Saniyeyi dakikaya çevir
+    total_time_minutes=$(echo "scale=2; $total_time_seconds / 60" | bc)
+
+    log "Disk sıfırlama işlemi yaklaşık olarak $total_time_minutes dakika sürecektir." "INFO"
+    log "Bu işlem diskin tüm verilerini geri dönülemez bir şekilde siler." "WARN"
+
+    read -p "Disk sıfırlama işlemini başlatmak istiyor musunuz? (y/N): " confirm
+    if [[ "$confirm" == [yY] ]]; then
+        wipe_disk
+    else
+        log "Disk sıfırlama işlemi atlandı, diğer adımlara geçiliyor..." "INFO"
+    fi
+}
+
+
+
 configure_partitions() {
     log "Disk Sıfırlama İşlemi Başlatılıyor..." "INFO"
-    wipe_disk
+    prompt_wipe_disk
     log "Eski bölüm düzeni siliniyor..." "INFO"
     wipefs -af $disk && sgdisk --zap-all --clear $disk && partprobe $disk || log "Eski bölüm düzeni silinirken hata oluştu." "ERROR"
     
