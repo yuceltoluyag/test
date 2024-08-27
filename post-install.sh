@@ -115,15 +115,16 @@ configure_snapper() {
 
     # Grub-btrfs kurulumu ve yapılandırılması
     print_message "Grub-btrfs kuruluyor ve yapılandırılıyor..."
-    install_packages grub-btrfs
+    install_packages grub-btrfs inotify-tools
     sudo sed -i 's|^#GRUB_BTRFS_GRUB_DIRNAME=.*|GRUB_BTRFS_GRUB_DIRNAME="/efi/grub"|' /etc/default/grub-btrfs/config
-    sudo systemctl enable --now grub-btrfs.path
+    sudo systemctl enable --now grub-btrfsd.service
 
     # Grub-btrfs için overlayfs yapılandırması
     print_message "Grub-btrfs için overlayfs yapılandırılıyor..."
     sudo sed -i 's/^HOOKS=(\(.*\))/HOOKS=(\1 grub-btrfs overlayfs)/' /etc/mkinitcpio.conf
     sudo mkinitcpio -P
 }
+
 
 # Tüm paketlerin kurulumu
 install_packages "${packages[@]}"
