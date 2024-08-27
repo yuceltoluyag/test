@@ -197,11 +197,17 @@ prompt_wipe_disk() {
 
     if [[ $? -ne 0 ]]; then
         log "Yazma hızı testi sırasında bir hata oluştu: $dd_output" "ERROR"
-        writing_speed_mb_s=33.4  # Varsayılan bir değere geri dönülüyor
+        writing_speed_mb_s=33  # Varsayılan bir değere geri dönülüyor
         log "Varsayılan yazma hızı $writing_speed_mb_s MB/s olarak ayarlandı." "WARN"
     else
         writing_speed_mb_s=$(echo "$dd_output" | grep -oP '\d+\.\d+(?= MB/s)')
         writing_speed_mb_s=${writing_speed_mb_s%.*}  # Ondalık kısmı sil
+
+        # Eğer yazma hızı boşsa veya 0'sa, varsayılan değeri kullan
+        if [[ -z "$writing_speed_mb_s" || "$writing_speed_mb_s" -eq 0 ]]; then
+            log "Yazma hızı sıfır veya boş olarak algılandı, varsayılan hız 33 MB/s olarak ayarlandı." "WARN"
+            writing_speed_mb_s=33
+        fi
     fi
 
     # Test dosyasını kaldır
@@ -233,6 +239,7 @@ prompt_wipe_disk() {
         log "Disk sıfırlama işlemi atlandı, diğer adımlara geçiliyor..." "INFO"
     fi
 }
+
 
 
 
