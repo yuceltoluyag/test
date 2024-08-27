@@ -186,27 +186,45 @@ wipe_disk() {
 }
 
 prompt_wipe_disk() {
+    # Kullanıcının seçtiği diskin boyutunu belirleyin
     disk_size_bytes=$(lsblk -b -n -o SIZE $disk)  
-    disk_size_gb=$(echo "scale=2; $disk_size_bytes / (1024^3)" | bc)  
+    disk_size_gb=$(echo "scale=2; $disk_size_bytes / (1024^3)" | bc)  # GB'ye çevir
 
+    # Yazma hızını otomatik olarak belirlemek için test yap
     log "Yazma hızı otomatik olarak belirleniyor..." "INFO"
     test_file="/tmp/testfile"
     dd_output=$(dd if=/dev/zero of=$test_file bs=1M count=100 oflag=dsync 2>&1)
+    
     if [[ $? -ne 0 ]]; then
         log "Yazma hızı testi sırasında bir hata oluştu: $dd_output" "ERROR"
-        writing_speed_mb_s=33.4  
+        writing_speed_mb_s=33.4  # Varsayılan bir değere geri dönülüyor
         log "Varsayılan yazma hızı $writing_speed_mb_s MB/s olarak ayarlandı." "WARN"
     else
         writing_speed_mb_s=$(echo "$dd_output" | grep -oP '\d+\.\d+(?= MB/s)')
     fi
 
+    # Test dosyasını kaldır
     rm -f $test_file
 
+    # Disk boyutunu MB cinsine çevir
     disk_size_mb=$(echo "$disk_size_gb * 1024" | bc)
+    
+    # Toplam yazma süresi (saniye cinsinden)
     total_time_seconds=$(echo "scale=2; $disk_size_mb / $writing_speed_mb_s" | bc)
+    
+    # Saniyeyi dakikaya çevir
     total_time_minutes=$(echo "scale=2; $total_time_seconds / 60" | bc)
 
-    log "Disk sıfırlama işlemi yaklaşık olarak $total_time_minutes dakika sürecektir." "INFO"
+    # Toplam süreyi saat ve dakikaya dönüştürme
+    hours=$(echo "$total_time_minutes / 60" | bc)
+    minutes=$(echo "$total_time_minutes % 60" | bc)
+
+    if [[ $hours -gt 0 ]]; then
+        log "Disk sıfırlama işlemi yaklaşık olarak $hours saat ve $minutes dakika sürecektir." "INFO"
+    else
+        log "Disk sıfırlama işlemi yaklaşık olarak $total_time_minutes dakika sürecektir." "INFO"
+    fi
+    
     log "Bu işlem diskin tüm verilerini geri dönülemez bir şekilde siler." "WARN"
 
     read -p "Disk sıfırlama işlemini başlatmak istiyor musunuz? (y/N): " confirm
@@ -216,6 +234,7 @@ prompt_wipe_disk() {
         log "Disk sıfırlama işlemi atlandı, diğer adımlara geçiliyor..." "INFO"
     fi
 }
+
 
 
 
