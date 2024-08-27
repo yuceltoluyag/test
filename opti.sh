@@ -193,18 +193,26 @@ prompt_wipe_disk() {
     # Yazma hızını otomatik olarak belirlemek için test yap
     log "Yazma hızı otomatik olarak belirleniyor..." "INFO"
     test_file="/tmp/testfile"
-    dd_output=$(dd if=/dev/zero of="$test_file" bs=1M count=100 conv=fdatasync 2>&1)
+    dd_output=$(LC_ALL=C dd if=/dev/zero of="$test_file" bs=1M count=100 conv=fdatasync 2>&1)
 
     if [[ $? -ne 0 ]]; then
         log "Yazma hızı testi sırasında bir hata oluştu: $dd_output" "ERROR"
         writing_speed_mb_s=33  # Varsayılan bir değere geri dönülüyor
         log "Varsayılan yazma hızı $writing_speed_mb_s MB/s olarak ayarlandı." "WARN"
     else
-        # Gerçek yazma hızını yakalamaya çalışalım
-        writing_speed_mb_s=$(echo "$dd_output" | grep -oP '\d+\.\d+(?= MB/s)')
+        # Yazma hızını yakalamak için hem MB/s hem de GB/s kontrolü yap
+        writing_speed=$(echo "$dd_output" | grep -oP '\d+(\.\d+)? (?=MB/s|GB/s)')
+        speed_unit=$(echo "$dd_output" | grep -oP '(MB/s|GB/s)')
+
+        # Eğer yakalanan hız GB/s ise MB/s'e çevir
+        if [[ "$speed_unit" == "GB/s" ]]; then
+            writing_speed_mb_s=$(awk "BEGIN {print $writing_speed * 1024}")
+        else
+            writing_speed_mb_s=$writing_speed
+        fi
 
         # Eğer yazma hızı boşsa veya 0'sa, varsayılan değeri kullan
-        if [[ -z "$writing_speed_mb_s" || "$writing_speed_mb_s" -eq 0 ]]; then
+        if [[ -z "$writing_speed_mb_s" || "$writing_speed_mb_s" == "0" ]]; then
             log "Yazma hızı sıfır veya boş olarak algılandı, varsayılan hız 33 MB/s olarak ayarlandı." "WARN"
             writing_speed_mb_s=33
         fi
@@ -239,6 +247,7 @@ prompt_wipe_disk() {
         log "Disk sıfırlama işlemi atlandı, diğer adımlara geçiliyor..." "INFO"
     fi
 }
+
 
 
 
