@@ -187,7 +187,8 @@ prompt_wipe_disk() {
     log "Yazma hızı otomatik olarak belirleniyor..." "INFO"
     test_file="/tmp/testfile"
     dd if=/dev/zero of=$test_file bs=1M count=100 oflag=dsync 2>&1 | grep -o '[0-9.]* MB/s' > /tmp/write_speed
-    writing_speed_mb_s=$(cat /tmp/write_speed | grep -o '[0-9.]*')
+    writing_speed_mb_s=$(dd if=/dev/zero of=$test_file bs=1M count=100 oflag=dsync 2>&1 | grep -oP '\d+\.\d+(?= MB/s)')
+
 
     # Test dosyasını kaldır
     rm -f $test_file
