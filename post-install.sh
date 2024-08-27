@@ -121,9 +121,15 @@ configure_snapper() {
 
     # Grub-btrfs için overlayfs yapılandırması
     print_message "Grub-btrfs için overlayfs yapılandırılıyor..."
-    sudo sed -i 's/^HOOKS=(\(.*\))/HOOKS=(\1 grub-btrfs overlayfs)/' /etc/mkinitcpio.conf
+    if ! grep -q "grub-btrfs" /etc/mkinitcpio.conf; then
+        sudo sed -i 's/^HOOKS=(\(.*\))/HOOKS=(\1 grub-btrfs overlayfs)/' /etc/mkinitcpio.conf
+        print_message "grub-btrfs ve overlayfs hook'ları eklendi."
+    else
+        print_message "grub-btrfs ve overlayfs hook'ları zaten ekli."
+    fi
     sudo mkinitcpio -P
 }
+
 
 
 # Tüm paketlerin kurulumu
@@ -153,13 +159,19 @@ EOL
 
 configure_zram() {
     print_message "Zram swap yapılandırması yapılıyor..."
-    sudo bash -c "echo 0 > /sys/module/zswap/parameters/enabled"
-    sudo swapoff --all
-    sudo modprobe zram num_devices=1
-    sudo bash -c "echo zstd > /sys/block/zram0/comp_algorithm"
-    sudo bash -c "echo 8G > /sys/block/zram0/disksize"
-    sudo mkswap --label zram0 /dev/zram0
-    sudo swapon --priority 32767 /dev/zram0
+    
+    # Zram'ın daha önce etkinleştirilip etkinleştirilmediğini kontrol edin
+    if grep -q "zram0" /proc/swaps; then
+        print_message "Zram zaten etkin, yapılandırma atlanıyor."
+    else
+        sudo bash -c "echo 0 > /sys/module/zswap/parameters/enabled"
+        sudo swapoff --all
+        sudo modprobe zram num_devices=1
+        sudo bash -c "echo zstd > /sys/block/zram0/comp_algorithm"
+        sudo bash -c "echo 8G > /sys/block/zram0/disksize"
+        sudo mkswap --label zram0 /dev/zram0
+        sudo swapon --priority 32767 /dev/zram0
+    fi
 }
 
 create_zram_scripts() {
