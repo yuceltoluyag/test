@@ -104,7 +104,14 @@ setup_keyfile() {
 
 set_hostname() {
     local hostname
-    read -r -p "Lütfen hostname adını girin: " hostname
+    while true; do
+        read -r -p "Lütfen hostname adını girin: " hostname
+        if [[ -z "$hostname" ]]; then
+            log "Hostname boş olamaz. Lütfen geçerli bir hostname girin." "ERROR"
+        else
+            break
+        fi
+    done
     echo "$hostname" > /mnt/etc/hostname
     cat > /mnt/etc/hosts <<EOF
 127.0.0.1   localhost
@@ -179,25 +186,24 @@ wipe_disk() {
 }
 
 prompt_wipe_disk() {
-    # Kullanıcının seçtiği diskin boyutunu belirleyin
-    disk_size_bytes=$(lsblk -b -n -o SIZE $disk)  # Disk boyutunu bayt cinsinden al
-    disk_size_gb=$(echo "scale=2; $disk_size_bytes / (1024^3)" | bc)  # GB'ye çevir
+    disk_size_bytes=$(lsblk -b -n -o SIZE $disk)  
+    disk_size_gb=$(echo "scale=2; $disk_size_bytes / (1024^3)" | bc)  
 
-    # Yazma hızını otomatik olarak belirlemek için test yap
     log "Yazma hızı otomatik olarak belirleniyor..." "INFO"
     test_file="/tmp/testfile"
-    dd if=/dev/zero of=$test_file bs=1M count=100 oflag=dsync 2>&1 | grep -o '[0-9.]* MB/s' > /tmp/write_speed
-    writing_speed_mb_s=$(dd if=/dev/zero of=$test_file bs=1M count=100 oflag=dsync 2>&1 | grep -oP '\d+\.\d+(?= MB/s)')
+    dd_output=$(dd if=/dev/zero of=$test_file bs=1M count=100 oflag=dsync 2>&1)
+    if [[ $? -ne 0 ]]; then
+        log "Yazma hızı testi sırasında bir hata oluştu: $dd_output" "ERROR"
+        writing_speed_mb_s=33.4  
+        log "Varsayılan yazma hızı $writing_speed_mb_s MB/s olarak ayarlandı." "WARN"
+    else
+        writing_speed_mb_s=$(echo "$dd_output" | grep -oP '\d+\.\d+(?= MB/s)')
+    fi
 
-
-    # Test dosyasını kaldır
     rm -f $test_file
 
-    # Disk boyutunu MB cinsine çevir
     disk_size_mb=$(echo "$disk_size_gb * 1024" | bc)
-    # Toplam yazma süresi (saniye cinsinden)
     total_time_seconds=$(echo "scale=2; $disk_size_mb / $writing_speed_mb_s" | bc)
-    # Saniyeyi dakikaya çevir
     total_time_minutes=$(echo "scale=2; $total_time_seconds / 60" | bc)
 
     log "Disk sıfırlama işlemi yaklaşık olarak $total_time_minutes dakika sürecektir." "INFO"
@@ -213,19 +219,25 @@ prompt_wipe_disk() {
 
 
 
+
 configure_partitions() {
     log "Disk Sıfırlama İşlemi Başlatılıyor..." "INFO"
     prompt_wipe_disk
     log "Eski bölüm düzeni siliniyor..." "INFO"
-    wipefs -af $disk && sgdisk --zap-all --clear $disk && partprobe $disk || log "Eski bölüm düzeni silinirken hata oluştu." "ERROR"
+    if ! (wipefs -af $disk && sgdisk --zap-all --clear $disk && partprobe $disk); then
+        log "Eski bölüm düzeni silinirken hata oluştu." "ERROR"
+        exit 1
+    fi
     
     log "Disk bölümlendiriliyor..." "INFO"
-    sgdisk -n 0:0:+512MiB -t 0:ef00 -c 0:esp $disk && \
-    sgdisk -n 0:0:0 -t 0:8309 -c 0:luks $disk && \
-    partprobe $disk || log "Disk bölümlendirme başarısız." "ERROR"
+    if ! (sgdisk -n 0:0:+512MiB -t 0:ef00 -c 0:esp $disk && sgdisk -n 0:0:0 -t 0:8309 -c 0:luks $disk && partprobe $disk); then
+        log "Disk bölümlendirme başarısız." "ERROR"
+        exit 1
+    fi
     sgdisk -p $disk
     log "Bölümler başarıyla oluşturuldu: EFI Bölümü -> $part1, Kök Bölümü -> $part2" "INFO"
 }
+
 
 setup_filesystems() {
     log "Dosya sistemleri oluşturuluyor..." "INFO"
@@ -372,43 +384,42 @@ check_mounts_before_chroot() {
 
 configure_mkinitcpio_and_grub() {
     log "mkinitcpio ve GRUB yapılandırması başlatılıyor..." "INFO"
-    
+
     # UUID'yi alıyoruz
-    uuid=$(arch-chroot /mnt blkid -s UUID -o value $part2)
+    uuid=$(arch-chroot /mnt blkid -s UUID -o value $part2 2>/dev/null)
     if [ -z "$uuid" ]; then
-        log "UUID alınamadı, kurulum iptal ediliyor." "ERROR"
+        log "UUID alınamadı. Diskin doğru biçimlendirildiğini ve bağlı olduğunu kontrol edin. Kurulum iptal ediliyor." "ERROR"
         exit 1
     fi
 
+    # arch-chroot içinde yapılan işlemleri bir komut bloğu olarak ele alıyoruz
     arch-chroot /mnt /bin/bash -c "
-    # mkinitcpio yapılandırması
-    sed -i 's/^FILES=()/FILES=(\/crypto_keyfile.bin)/' /etc/mkinitcpio.conf
-    sed -i 's/^MODULES=.*/MODULES=(btrfs crc32c-intel)/' /etc/mkinitcpio.conf
-    sed -i 's/^HOOKS=.*/HOOKS=(base udev keyboard autodetect keymap modconf microcode consolefont block encrypt resume filesystems fsck)/' /etc/mkinitcpio.conf
+        # mkinitcpio yapılandırması
+        sed -i 's/^FILES=()/FILES=(\/crypto_keyfile.bin)/' /etc/mkinitcpio.conf
+        sed -i 's/^MODULES=.*/MODULES=(btrfs crc32c-intel)/' /etc/mkinitcpio.conf
+        sed -i 's/^HOOKS=.*/HOOKS=(base udev keyboard autodetect keymap modconf microcode consolefont block encrypt resume filesystems fsck)/' /etc/mkinitcpio.conf
 
-    # mkinitcpio güncellemesi
-    if ! mkinitcpio -P; then
-        echo 'mkinitcpio güncellemesi başarısız.' >&2
-        exit 1
-    fi
+        # mkinitcpio güncellemesi
+        if ! mkinitcpio -P; then
+            echo 'mkinitcpio güncellemesi başarısız.' >&2
+            exit 1
+        fi
 
-    # GRUB yapılandırma
-    sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=\"loglevel=3 quiet cryptdevice=UUID=$uuid:cryptdev\"/' /etc/default/grub
-    sed -i 's/^#GRUB_PRELOAD_MODULES=.*/GRUB_PRELOAD_MODULES=\"part_gpt part_msdos luks\"/' /etc/default/grub
-    sed -i 's/^#GRUB_ENABLE_CRYPTODISK=.*/GRUB_ENABLE_CRYPTODISK=y/' /etc/default/grub
-    
+        # GRUB yapılandırma
+        sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=\"loglevel=3 quiet cryptdevice=UUID=$uuid:cryptdev\"/' /etc/default/grub
+        sed -i 's/^#GRUB_PRELOAD_MODULES=.*/GRUB_PRELOAD_MODULES=\"part_gpt part_msdos luks\"/' /etc/default/grub
+        sed -i 's/^#GRUB_ENABLE_CRYPTODISK=.*/GRUB_ENABLE_CRYPTODISK=y/' /etc/default/grub
 
-    # GRUB kurulumu ve yapılandırması
-    grub-install --target=x86_64-efi --efi-directory=/efi --boot-directory=/efi --removable --bootloader-id=GRUB
-    if [ \$? -ne 0 ]; then
-        echo 'GRUB kurulumu başarısız oldu.' >&2
-        exit 1
-    fi
-    grub-mkconfig -o /efi/grub/grub.cfg
-    if [ \$? -ne 0 ];then
-        echo 'GRUB yapılandırması başarısız oldu.' >&2
-        exit 1
-    fi
+        # GRUB kurulumu ve yapılandırması
+        if ! grub-install --target=x86_64-efi --efi-directory=/efi --boot-directory=/efi --removable --bootloader-id=GRUB; then
+            echo 'GRUB kurulumu başarısız oldu.' >&2
+            exit 1
+        fi
+
+        if ! grub-mkconfig -o /efi/grub/grub.cfg; then
+            echo 'GRUB yapılandırması başarısız oldu.' >&2
+            exit 1
+        fi
     "
 
     if [ $? -ne 0 ]; then
@@ -418,6 +429,7 @@ configure_mkinitcpio_and_grub() {
 
     log "mkinitcpio ve GRUB başarıyla yapılandırıldı." "INFO"
 }
+
 
 configure_chroot() {
     log "Sisteme chroot ile giriliyor ve yapılandırma adımları gerçekleştiriliyor..." "INFO"
