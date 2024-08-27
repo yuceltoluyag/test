@@ -71,7 +71,7 @@ enable_services() {
 packages=(
     dbus intel-ucode fuse2 lshw powertop inxi acpi base-devel git zip unzip htop tree w3m dialog reflector bash-completion arandr iw
     wpa_supplicant tcpdump mtr net-tools conntrack-tools ethtool wget rsync socat openbsd-netcat axel sof-firmware ttf-impallari-cabin-font ttf-ms-fonts glow ttf-jetbrains-mono exa bc jq most bat neovim vi man screen asciinema expect arch-audit whois stress iotop ncdu nethogs openssh sshpass keychain bind-tools cronie at borgbackup borgmatic pwgen lsd rclone syncthing vdirsyncer khal khard words fzf neofetch cifs-utils shellcheck oath-toolkit python-pip dmidecode python-pre-commit zim mailutils python-pipx
-    xorg-server xorg-apps xorg-xinit xdotool xclip xsel ttf-dejavu ttf-freefont ttf-liberation ttf-droid terminus-font noto-fonts noto-fonts-emoji ttf-ubuntu-font-family ttf-roboto bluez bluez-utils blueman nm-connection-editor networkmanager-openvpn python-poetry fail2ban lightdm lightdm-gtk-greeter oblogout ttyd dool nmap pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber alsa-utils dmenu rofi alacritty i3-wm i3lock i3blocks i3status imwheel scrot i3ipc-python network-manager-applet ranger ffmpegthumbnailer firefox lxappearance feh sxiv dunst
+    xorg-server xorg-apps xorg-xinit xdotool xclip xsel ttf-dejavu ttf-freefont ttf-liberation ttf-droid terminus-font noto-fonts noto-fonts-emoji ttf-ubuntu-font-family ttf-roboto bluez bluez-utils blueman nm-connection-editor networkmanager-openvpn python-poetry fail2ban lightdm lightdm-gtk-greeter oblogout ttyd dool nmap pipewire pipewire-alsa pipewire-pulse pipewire-jack wireplumber alsa-utils dmenu rofi alacritty i3-wm i3lock i3blocks i3status imwheel scrot i3ipc-python network-manager-applet ranger ffmpegthumbnailer firefox lxappearance feh sxiv dunst btrfs-assistant linux-lts linux-lts-headers plocate
 )
 
 configure_snapper() {
@@ -117,15 +117,17 @@ configure_snapper() {
     print_message "Grub-btrfs kuruluyor ve yapılandırılıyor..."
     install_packages grub-btrfs inotify-tools
     sudo sed -i 's|^#GRUB_BTRFS_GRUB_DIRNAME=.*|GRUB_BTRFS_GRUB_DIRNAME="/efi/grub"|' /etc/default/grub-btrfs/config
+    sudo sed -i 's|^#GRUB_BTRFS_BOOT_DIRNAME=.*|GRUB_BTRFS_BOOT_DIRNAME="/efi"|' /etc/default/grub-btrfs/config
+
     sudo systemctl enable --now grub-btrfsd.service
 
     # Grub-btrfs için overlayfs yapılandırması
     print_message "Grub-btrfs için overlayfs yapılandırılıyor..."
-    if ! grep -q "grub-btrfs" /etc/mkinitcpio.conf; then
-        sudo sed -i 's/^HOOKS=(\(.*\))/HOOKS=(\1 grub-btrfs overlayfs)/' /etc/mkinitcpio.conf
-        print_message "grub-btrfs ve overlayfs hook'ları eklendi."
+    if ! grep -q "grub-btrfs-overlayfs" /etc/mkinitcpio.conf; then
+        sudo sed -i 's/^HOOKS=(\(.*\))/HOOKS=(\1 grub-btrfs-overlayfs)/' /etc/mkinitcpio.conf
+        print_message "grub-btrfs-overlayfs hook'u eklendi."
     else
-        print_message "grub-btrfs ve overlayfs hook'ları zaten ekli."
+        print_message "grub-btrfs-overlayfs hook'u zaten ekli."
     fi
     sudo mkinitcpio -P
 }
