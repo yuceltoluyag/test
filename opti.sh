@@ -1,72 +1,90 @@
 #!/bin/bash
 
-# Log file path
 LOG_FILE="/var/log/arch_install.log"
-
-# Renkler
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
-NC='\033[0m' # Renk sıfırlama
+NC='\033[0m'
 
-# Log function
 log() {
     local msg="$1"
     local level="$2"
     local color=""
 
-    # Mesaj seviyesine göre renk belirleme
     case "$level" in
         INFO) color="$GREEN" ;;
         WARN) color="$YELLOW" ;;
         ERROR) color="$RED" ;;
     esac
 
-    # Ekrana renkli çıktı, log dosyasına renksiz çıktı
     printf "${color}%s [%s] %s${NC}\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$level" "$msg" | tee -a >(sed 's/\x1b\[[0-9;]*m//g' >> "$LOG_FILE")
 }
 
-
-# Terminus font yükleme ve ayarlama
 install_font() {
     log "Terminus fontu yükleniyor..." "INFO"
-    if ! pacman -Qi terminus-font > /dev/null; then
-        pacman -Sy --noconfirm terminus-font || log "Terminus font kurulumu başarısız." "ERROR"
-    fi
+    pacman -Sy --noconfirm terminus-font || log "Terminus font kurulumu başarısız." "ERROR"
     setfont ter-v24n || log "Font ayarlanamadı." "ERROR"
 }
 
-# Sanallaştırma kontrolü (Virtualization check)
 virt_check() {
+    local hypervisor
     hypervisor=$(systemd-detect-virt)
-    case $hypervisor in
-        kvm )   
-            log "KVM tespit edildi, misafir araçları kuruluyor..." "INFO"
-            pacstrap /mnt qemu-guest-agent &>/dev/null
-            systemctl enable qemu-guest-agent --root=/mnt &>/dev/null
-            ;;
-        vmware )   
-            log "VMWare Workstation/ESXi tespit edildi, misafir araçları kuruluyor..." "INFO"
-            pacstrap /mnt open-vm-tools &>/dev/null
-            systemctl enable vmtoolsd --root=/mnt &>/dev/null
-            systemctl enable vmware-vmblock-fuse --root=/mnt &>/dev/null
-            ;;
-        oracle )    
-            log "VirtualBox tespit edildi, misafir araçları kuruluyor..." "INFO"
-            pacstrap /mnt virtualbox-guest-utils &>/dev/null
-            systemctl enable vboxservice --root=/mnt &>/dev/null
-            ;;
-        microsoft ) 
-            log "Hyper-V tespit edildi, misafir araçları kuruluyor..." "INFO"
-            pacstrap /mnt hyperv &>/dev/null
-            systemctl enable hv_fcopy_daemon --root=/mnt &>/dev/null
-            systemctl enable hv_kvp_daemon --root=/mnt &>/dev/null
-            systemctl enable hv_vss_daemon --root=/mnt &>/dev/null
-            ;;
-        * ) 
+    log "${hypervisor^} tespit edildi, misafir araçları kuruluyor..." "INFO"
+    case "$hypervisor" in
+        kvm) packages="qemu-guest-agent" ;;
+        vmware) packages="open-vm-tools" ;;
+        oracle) packages="virtualbox-guest-utils" ;;
+        microsoft) packages="hyperv" ;;
+        *) 
             log "Sanallaştırma tespit edilmedi veya desteklenmeyen bir sanallaştırma platformu tespit edildi. Devam ediyor..." "INFO"
-            ;;
+            return ;;
     esac
+
+    pacstrap /mnt $packages &>/dev/null
+    systemctl enable --root=/mnt $packages &>/dev/null
+}
+
+mount_partition() {
+    local part="$1"
+    local mount_point="$2"
+    log "$mount_point dizini için $part monte ediliyor..." "INFO"
+    mkdir -p "$mount_point"
+    mount "$part" "$mount_point" || log "$mount_point monte edilemedi." "ERROR"
+}
+
+setup_partitions() {
+    if [[ "$disk" == *"nvme"* ]]; then
+        part1="${disk}p1"
+        part2="${disk}p2"
+    else
+        part1="${disk}1"
+        part2="${disk}2"
+    fi
+}
+
+select_disk() {
+    log "Kurulum için kullanılacak disk seçiliyor..." "INFO"
+    PS3="Lütfen kurulumu yapacağınız diskin numarasını seçin: "
+    disks=$(lsblk -dpnoNAME,SIZE,MODEL | grep -P "/dev/sd|/dev/nvme|/dev/vd")
+
+    select disk in $disks; do
+        if [ -n "$disk" ]; then
+            log "Kurulum için seçilen disk: $disk" "INFO"
+            read -p "Lütfen seçiminizi onaylayın (y/N): " confirm
+            [[ "$confirm" =~ ^[yY]$ ]] && setup_partitions && break
+            log "Disk seçimi iptal edildi, lütfen tekrar deneyin." "WARN"
+        else
+            log "Geçersiz bir seçim yaptınız. Lütfen tekrar deneyin." "ERROR"
+        fi
+    done
+}
+
+rotate_logs() {
+    if [ -f "$LOG_FILE" ] && [ $(stat -c%s "$LOG_FILE") -ge 1048576 ]; then
+        mv "$LOG_FILE" "$LOG_FILE.$(date +%F-%T)"
+        touch "$LOG_FILE"
+        log "Log dosyası döndürüldü." "INFO"
+    fi
 }
 
 setup_keyfile() {
@@ -96,7 +114,6 @@ EOF
     log "Hostname başarıyla ayarlandı: $hostname" "INFO"
 }
 
-# Klavye düzeni seçimi
 select_keyboard_layout() {
     log "Mevcut klavye düzenleri listeleniyor..." "INFO"
     available_layouts=$(localectl list-keymaps | grep -E 'trq|us|uk|de')
@@ -114,7 +131,6 @@ select_keyboard_layout() {
     fi
 }
 
-# UEFI mod kontrolü
 check_uefi_mode() {
     log "UEFI modda önyükleme kontrol ediliyor..." "INFO"
     if [ -d /sys/firmware/efi/efivars ]; then
@@ -132,73 +148,6 @@ check_uefi_mode() {
     fi
 }
 
-setup_partitions() {
-    if [[ "$disk" == *"nvme"* ]]; then
-        part1="${disk}p1"
-        part2="${disk}p2"
-    else
-        part1="${disk}1"
-        part2="${disk}2"
-    fi
-}
-
-# Disk seçimi ve türüne göre partisyon ayarlama
-select_disk() {
-    log "Kurulum için kullanılacak disk seçiliyor..." "INFO"
-    
-    # Kullanılabilir diskleri listeleme
-    PS3="Lütfen kurulumu yapacağınız diskin numarasını seçin (örn: 1, 2, 3): "
-    disks=$(lsblk -dpnoNAME,SIZE,MODEL | grep -P "/dev/sd|/dev/nvme|/dev/vd")
-
-    select disk in $disks; do
-        if [ -n "$disk" ]; then
-            log "Kurulum için seçilen disk: $disk" "INFO"
-            read -p "Lütfen seçiminizi onaylayın (y/N): " confirm
-            if [[ "$confirm" =~ ^[yY]$ ]]; then
-                export disk
-                setup_partitions
-                break
-            else
-                log "Disk seçimi iptal edildi, lütfen tekrar deneyin." "WARN"
-            fi
-        else
-            log "Geçersiz bir seçim yaptınız. Lütfen tekrar deneyin." "ERROR"
-        fi
-    done
-}
-
-# Disk silme (wipe) işlemi
-wipe_disk() {
-    log "DİKKAT:$disk  tamamen sıfırlanacak. Bu işlem geri alınamaz!" "WARN"
-    read -p "Disk silme işlemine devam etmek istediğinizden emin misiniz? (y/N): " confirm
-    if [[ "$confirm" != [yY] ]]; then
-        log "Disk silme işlemi iptal edildi." "INFO"
-        return
-    fi
-
-    log "Disk silme işlemi başlatılıyor..." "INFO"
-
-    # Geçici bir şifreleme konteyneri oluştur
-    cryptsetup open --type plain -d /dev/urandom $disk wipe_me || {
-        log "Geçici şifreleme konteyneri oluşturulamadı." "ERROR"
-        exit 1
-    }
-
-    # Konteyner üzerinde sıfırlama işlemi yap
-    dd bs=1M if=/dev/zero of=/dev/mapper/wipe_me status=progress || {
-        log "Disk sıfırlama işlemi başarısız." "ERROR"
-        cryptsetup close wipe_me
-        exit 1
-    }
-
-    # Konteyneri kapat
-    cryptsetup close wipe_me || log "Geçici şifreleme konteyneri kapatılamadı." "ERROR"
-
-    log "Disk sıfırlama işlemi başarıyla tamamlandı." "INFO"
-}
-
-
-# Bölüm silme ve yeniden yapılandırma
 configure_partitions() {
     log "Disk Sıfırlama İşlemi Başlatılıyor..." "INFO"
     wipe_disk
@@ -213,7 +162,6 @@ configure_partitions() {
     log "Bölümler başarıyla oluşturuldu: EFI Bölümü -> $part1, Kök Bölümü -> $part2" "INFO"
 }
 
-# LUKS şifreleme ve dosya sistemlerini yapılandırma
 setup_filesystems() {
     log "Dosya sistemleri oluşturuluyor..." "INFO"
     log "${part2} bölümü LUKS1 ile şifreleniyor..." "INFO"
@@ -224,11 +172,10 @@ setup_filesystems() {
     log "EFI bölümü ($part1) FAT32 olarak formatlanıyor..." "INFO"
     mkfs.vfat -F32 -n ESP $part1 || log "ESP formatlama başarısız." "ERROR"
 
-    log "Kök bölümü (/dev/mapper/cryptroot) /mnt dizinine monte ediliyor..." "INFO"
+    log "Kök bölümü (/dev/mapper/cryptdev) /mnt dizinine monte ediliyor..." "INFO"
     mkfs.btrfs -L archlinux /dev/mapper/cryptdev || log "BTRFS formatlama başarısız." "ERROR"
 }
 
-# Alt birimlerin oluşturulması ve bağlanması
 setup_btrfs_subvolumes() {
     log "BTRFS alt birimleri oluşturuluyor..." "INFO"
     mount /dev/mapper/cryptdev /mnt || log "Disk montajı başarısız." "ERROR"
@@ -255,14 +202,14 @@ setup_btrfs_subvolumes() {
 
     # Alt birimleri monte etme (swap hariç)
     log "Alt birimler monte ediliyor..." "INFO"
-    mount -o ${sv_opts},subvol=@home /dev/mapper/cryptroot /mnt/home || log "Home alt birimi monte edilemedi." "ERROR"
-    mount -o ${sv_opts},subvol=@snapshots /dev/mapper/cryptroot /mnt/.snapshots || log "Snapshots alt birimi monte edilemedi." "ERROR"
-    mount -o ${sv_opts},subvol=@cache /dev/mapper/cryptroot /mnt/var/cache || log "Cache alt birimi monte edilemedi." "ERROR"
+    mount -o ${sv_opts},subvol=@home /dev/mapper/cryptdev /mnt/home || log "Home alt birimi monte edilemedi." "ERROR"
+    mount -o ${sv_opts},subvol=@snapshots /dev/mapper/cryptdev /mnt/.snapshots || log "Snapshots alt birimi monte edilemedi." "ERROR"
+    mount -o ${sv_opts},subvol=@cache /dev/mapper/cryptdev /mnt/var/cache || log "Cache alt birimi monte edilemedi." "ERROR"
     mount -o ${sv_opts},subvol=@libvirt /dev/mapper/cryptdev /mnt/var/lib/libvirt || log "libvirt alt birimi monte edilemedi." "ERROR"
-    mount -o ${sv_opts},subvol=@log /dev/mapper/cryptroot /mnt/var/log || log "Log alt birimi monte edilemedi." "ERROR"
-    mount -o ${sv_opts},subvol=@tmp /dev/mapper/cryptroot /mnt/var/tmp || log "Tmp alt birimi monte edilemedi." "ERROR"
+    mount -o ${sv_opts},subvol=@log /dev/mapper/cryptdev /mnt/var/log || log "Log alt birimi monte edilemedi." "ERROR"
+    mount -o ${sv_opts},subvol=@tmp /dev/mapper/cryptdev /mnt/var/tmp || log "Tmp alt birimi monte edilemedi." "ERROR"
+}
 
-# ESP bölümü monte etme
 mount_esp() {
     log "EFI bölümü (${part1}) /mnt/efi dizinine monte ediliyor..." "INFO"
     
@@ -279,7 +226,6 @@ mount_esp() {
     log "EFI bölümü başarıyla monte edildi." "INFO"
 }
 
-# Temel yapılandırma işlemleri
 configure_system() {
     log "Paket veritabanları senkronize ediliyor..." "INFO"
     pacman -Syy || log "Paket senkronizasyonu başarısız." "ERROR"
@@ -312,7 +258,6 @@ configure_system() {
     cat /mnt/etc/fstab
 }
 
-# Kullanıcıyı oluşturma ve şifre belirleme
 set_user_and_password() {
     local user=$1
     local pass
@@ -350,7 +295,6 @@ set_user_and_password() {
     arch-chroot /mnt sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers || log "sudoers dosyası güncellenemedi." "ERROR"
 }
 
-# Chroot işlemi öncesi kontrol
 check_mounts_before_chroot() {
     log "Chroot öncesi disklerin doğru monte edildiği kontrol ediliyor..." "INFO"
     if mountpoint -q /mnt && mountpoint -q /mnt/efi && mountpoint -q /mnt/home && mountpoint -q /mnt/.snapshots; then
@@ -396,7 +340,7 @@ configure_mkinitcpio_and_grub() {
         exit 1
     fi
     grub-mkconfig -o /efi/grub/grub.cfg
-    if [ \$? -ne 0 ]; then
+    if [ \$? -ne 0 ];then
         echo 'GRUB yapılandırması başarısız oldu.' >&2
         exit 1
     fi
@@ -410,7 +354,6 @@ configure_mkinitcpio_and_grub() {
     log "mkinitcpio ve GRUB başarıyla yapılandırıldı." "INFO"
 }
 
-# Chroot içindeki yapılandırma
 configure_chroot() {
     log "Sisteme chroot ile giriliyor ve yapılandırma adımları gerçekleştiriliyor..." "INFO"
     arch-chroot /mnt /bin/bash <<'EOF'
@@ -461,17 +404,6 @@ EOF
     configure_mkinitcpio_and_grub
 }
 
-rotate_logs() {
-    if [ -f "$LOG_FILE" ]; then
-        if [ $(stat -c%s "$LOG_FILE") -ge 1048576 ]; then
-            mv "$LOG_FILE" "$LOG_FILE.$(date +%F-%T)"
-            touch "$LOG_FILE"
-            log "Log dosyası döndürüldü." "INFO"
-        fi
-    fi
-}
-
-# Chroot'tan çıkış ve sistemin yeniden başlatılması
 finalize_installation() {
     log "Chroot'tan çıkılıyor ve sistem yeniden başlatılıyor..." "INFO"
     mkdir -p /mnt/home/$username/test
@@ -487,8 +419,6 @@ finalize_installation() {
     # reboot
 }
 
-
-# Tüm işlemleri başlatma
 main() {
     rotate_logs
     install_font
