@@ -188,7 +188,7 @@ wipe_disk() {
 prompt_wipe_disk() {
     # Kullanıcının seçtiği diskin boyutunu belirleyin
     disk_size_bytes=$(lsblk -b -n -o SIZE "$disk")
-    disk_size_mb=$((disk_size_bytes / 1024 / 1024))  # MB'ye çevir
+    disk_size_mb=$(awk "BEGIN {print $disk_size_bytes / 1024 / 1024}")  # MB'ye çevir
 
     # Yazma hızını otomatik olarak belirlemek için test yap
     log "Yazma hızı otomatik olarak belirleniyor..." "INFO"
@@ -208,14 +208,14 @@ prompt_wipe_disk() {
     rm -f "$test_file"
 
     # Toplam yazma süresi (saniye cinsinden)
-    total_time_seconds=$((disk_size_mb / writing_speed_mb_s))
+    total_time_seconds=$(awk "BEGIN {print $disk_size_mb / $writing_speed_mb_s}")
 
     # Saniyeyi dakikaya çevir ve tam sayı olarak göster
-    total_time_minutes=$((total_time_seconds / 60))
+    total_time_minutes=$(awk "BEGIN {print int($total_time_seconds / 60)}")
 
     # Toplam süreyi saat ve dakikaya dönüştürme
-    hours=$((total_time_minutes / 60))
-    minutes=$((total_time_minutes % 60))
+    hours=$(awk "BEGIN {print int($total_time_minutes / 60)}")
+    minutes=$(awk "BEGIN {print $total_time_minutes % 60}")
 
     # Toplam süreyi bilgi olarak göster
     if [[ $hours -gt 0 ]]; then
@@ -233,6 +233,7 @@ prompt_wipe_disk() {
         log "Disk sıfırlama işlemi atlandı, diğer adımlara geçiliyor..." "INFO"
     fi
 }
+
 
 configure_partitions() {
     log "Disk Sıfırlama İşlemi Başlatılıyor..." "INFO"
