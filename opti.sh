@@ -235,6 +235,7 @@ prompt_wipe_disk() {
 }
 
 
+
 configure_partitions() {
     log "Disk Sıfırlama İşlemi Başlatılıyor..." "INFO"
     prompt_wipe_disk
