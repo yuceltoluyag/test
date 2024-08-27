@@ -210,7 +210,7 @@ prompt_wipe_disk() {
     disk_size_mb=$(echo "$disk_size_gb * 1024" | bc)
 
     # Toplam yazma süresi (saniye cinsinden)
-    total_time_seconds=$(echo "scale=2; $disk_size_mb / $writing_speed_mb_s" | bc)
+    total_time_seconds=$(echo "$disk_size_mb / $writing_speed_mb_s" | bc)
 
     # Saniyeyi dakikaya çevir ve tam sayı olarak göster
     total_time_minutes=$(echo "$total_time_seconds / 60" | bc)
@@ -219,6 +219,7 @@ prompt_wipe_disk() {
     hours=$(echo "$total_time_minutes / 60" | bc)
     minutes=$(echo "$total_time_minutes % 60" | bc)
 
+    # Sayısal format sorununu çözmek için double brackets kullanmadan işlem yapmak daha doğru olur.
     if [[ $hours -gt 0 ]]; then
         log "Disk sıfırlama işlemi yaklaşık olarak $hours saat ve $minutes dakika sürecektir." "INFO"
     else
@@ -234,6 +235,7 @@ prompt_wipe_disk() {
         log "Disk sıfırlama işlemi atlandı, diğer adımlara geçiliyor..." "INFO"
     fi
 }
+
 
 
 
