@@ -148,6 +148,36 @@ check_uefi_mode() {
     fi
 }
 
+# Disk silme (wipe) işlemi
+wipe_disk() {
+    log "DİKKAT:$disk  tamamen sıfırlanacak. Bu işlem geri alınamaz!" "WARN"
+    read -p "Disk silme işlemine devam etmek istediğinizden emin misiniz? (y/N): " confirm
+    if [[ "$confirm" != [yY] ]]; then
+        log "Disk silme işlemi iptal edildi." "INFO"
+        return
+    fi
+
+    log "Disk silme işlemi başlatılıyor..." "INFO"
+
+    # Geçici bir şifreleme konteyneri oluştur
+    cryptsetup open --type plain -d /dev/urandom $disk wipe_me || {
+        log "Geçici şifreleme konteyneri oluşturulamadı." "ERROR"
+        exit 1
+    }
+
+    # Konteyner üzerinde sıfırlama işlemi yap
+    dd bs=1M if=/dev/zero of=/dev/mapper/wipe_me status=progress || {
+        log "Disk sıfırlama işlemi başarısız." "ERROR"
+        cryptsetup close wipe_me
+        exit 1
+    }
+
+    # Konteyneri kapat
+    cryptsetup close wipe_me || log "Geçici şifreleme konteyneri kapatılamadı." "ERROR"
+
+    log "Disk sıfırlama işlemi başarıyla tamamlandı." "INFO"
+}
+
 configure_partitions() {
     log "Disk Sıfırlama İşlemi Başlatılıyor..." "INFO"
     wipe_disk
