@@ -164,20 +164,41 @@ wipe_disk() {
         return
     fi
 
+    # Disk boyutunu öğren
+    disk_size_bytes=$(lsblk -b -n -o SIZE "$disk")
+    disk_size_mb=$(awk -v size_bytes="$disk_size_bytes" 'BEGIN {print size_bytes / 1024 / 1024}')
+    
+    log "Disk boyutu: $disk_size_mb MB" "INFO"
     log "Disk silme işlemi başlatılıyor..." "INFO"
 
-    # Geçici bir şifreleme konteyneri oluştur
-    cryptsetup open --type plain -d /dev/urandom $disk wipe_me || {
+    # Geçici bir şifreleme konteyneri oluştur ve tüm diski kaplayacak şekilde ayarla
+    cryptsetup open --type plain -d /dev/urandom "$disk" wipe_me || {
         log "Geçici şifreleme konteyneri oluşturulamadı." "ERROR"
         exit 1
     }
 
-    # Konteyner üzerinde sıfırlama işlemi yap
-    dd bs=1M if=/dev/zero of=/dev/mapper/wipe_me status=progress || {
-        log "Disk sıfırlama işlemi başarısız." "ERROR"
-        cryptsetup close wipe_me
-        exit 1
-    }
+    # Kullanıcıya işlem süresince iptal seçeneği sunuluyor
+    (
+        dd if=/dev/zero of=/dev/mapper/wipe_me bs=1M count="$disk_size_mb" status=progress oflag=sync conv=fdatasync || {
+            log "Disk sıfırlama işlemi başarısız." "ERROR"
+            cryptsetup close wipe_me
+            exit 1
+        }
+    ) &
+
+    # Kullanıcıya iptal seçeneği sunmak için bir tuş bekle
+    log "Disk sıfırlama işlemi devam ediyor... İptal etmek için 'q' tuşuna basabilirsiniz." "INFO"
+    while kill -0 $! 2>/dev/null; do
+        read -t 1 -n 1 key
+        if [[ "$key" == "q" ]]; then
+            log "Disk sıfırlama işlemi iptal edildi, çıkılıyor..." "WARN"
+            kill $! 2>/dev/null
+            cryptsetup close wipe_me || log "Geçici şifreleme konteyneri kapatılamadı." "ERROR"
+            return
+        fi
+    done
+
+    wait $!
 
     # Konteyneri kapat
     cryptsetup close wipe_me || log "Geçici şifreleme konteyneri kapatılamadı." "ERROR"
@@ -185,60 +206,13 @@ wipe_disk() {
     log "Disk sıfırlama işlemi başarıyla tamamlandı." "INFO"
 }
 
-prompt_wipe_disk() {
-    # Kullanıcının seçtiği diskin boyutunu belirleyin
-    disk_size_bytes=$(lsblk -b -n -o SIZE "$disk")
-    disk_size_mb=$(awk -v size_bytes="$disk_size_bytes" 'BEGIN {print size_bytes / 1024 / 1024}')  # MB'ye çevir
 
-    # Yazma hızını otomatik olarak belirlemek için test yap
-    log "Yazma hızı otomatik olarak belirleniyor..." "INFO"
-    test_file="/tmp/testfile"
-    dd_output=$(LC_ALL=C dd if=/dev/zero of="$test_file" bs=1M count=100 conv=fdatasync 2>&1)
 
-    if [[ $? -ne 0 ]]; then
-        log "Yazma hızı testi sırasında bir hata oluştu: $dd_output" "ERROR"
-        writing_speed_mb_s=33  # Varsayılan bir değere geri dönülüyor
-        log "Varsayılan yazma hızı $writing_speed_mb_s MB/s olarak ayarlandı." "WARN"
-    else
-        # Yazma hızını yakalamak için hem MB/s hem de GB/s kontrolü yap
-        writing_speed=$(echo "$dd_output" | grep -oP '\d+(\.\d+)? (?=MB/s|GB/s)')
-        speed_unit=$(echo "$dd_output" | grep -oP '(MB/s|GB/s)')
-
-        # Eğer yakalanan hız GB/s ise MB/s'e çevir
-        if [[ "$speed_unit" == "GB/s" ]]; then
-            writing_speed_mb_s=$(awk "BEGIN {print $writing_speed * 1024}")
-        else
-            writing_speed_mb_s=$writing_speed
-        fi
-
-        # Eğer yazma hızı boşsa veya 0'sa, varsayılan değeri kullan
-        if [[ -z "$writing_speed_mb_s" || "$writing_speed_mb_s" == "0" ]]; then
-            log "Yazma hızı sıfır veya boş olarak algılandı, varsayılan hız 33 MB/s olarak ayarlandı." "WARN"
-            writing_speed_mb_s=33
-        fi
-    fi
-
-    # Test dosyasını kaldır
-    rm -f "$test_file"
-
-    # Toplam yazma süresi (saniye cinsinden)
-    total_time_seconds=$(awk -v disk_mb="$disk_size_mb" -v speed_mb="$writing_speed_mb_s" 'BEGIN {print disk_mb / speed_mb}')
-
-    # Saniyeyi dakikaya çevir ve tam sayı olarak göster
-    total_time_minutes=$(awk -v total_seconds="$total_time_seconds" 'BEGIN {print int(total_seconds / 60)}')
-
-    # Toplam süreyi saat ve dakikaya dönüştürme
-    hours=$(awk -v total_minutes="$total_time_minutes" 'BEGIN {print int(total_minutes / 60)}')
-    minutes=$(awk -v total_minutes="$total_time_minutes" 'BEGIN {print total_minutes % 60}')
-
-    # Toplam süreyi bilgi olarak göster
-    if [[ $hours -gt 0 ]]; then
-        log "Disk sıfırlama işlemi yaklaşık olarak $hours saat ve $minutes dakika sürecektir." "INFO"
-    else
-        log "Disk sıfırlama işlemi yaklaşık olarak $total_time_minutes dakika sürecektir." "INFO"
-    fi
-
-    log "Bu işlem diskin tüm verilerini geri dönülemez bir şekilde siler." "WARN"
+ask_for_wipe_disk() {
+    log "50 GB'lik bir Hard-disk, 61.9 MB/s hızla sıfırlanırken yaklaşık 13 dakika 28 saniye sürüyor." "INFO"
+    log "Eğer yazma hızınız düşükse ve sabırlı değilseniz, wipe_disk fonksiyonunun çalıştırılmasını tekrar düşünün." "WARN"
+    log "Bu işlem, diskteki tüm verileri geri alınamaz şekilde siler ve diskteki tüm mevcut bölümleri kaldırır." "WARN"
+    log "Bu işlemden sonra verilerin geri yüklenmesi mümkün değildir!" "ERROR"
 
     read -p "Disk sıfırlama işlemini başlatmak istiyor musunuz? (y/N): " confirm
     if [[ "$confirm" =~ ^[yY]$ ]]; then
@@ -248,16 +222,9 @@ prompt_wipe_disk() {
     fi
 }
 
-
-
-
-
-
-
-
 configure_partitions() {
-    log "Disk Sıfırlama İşlemi Başlatılıyor..." "INFO"
-    prompt_wipe_disk
+    log "Güvenli Disk Sıfırlama İşlemi Başlatılıyor..." "INFO"
+    ask_for_wipe_disk
     log "Eski bölüm düzeni siliniyor..." "INFO"
     if ! (wipefs -af $disk && sgdisk --zap-all --clear $disk && partprobe $disk); then
         log "Eski bölüm düzeni silinirken hata oluştu." "ERROR"
@@ -465,46 +432,56 @@ configure_mkinitcpio_and_grub() {
     log "mkinitcpio ve GRUB başarıyla yapılandırıldı." "INFO"
 }
 
+# Chroot içinde zaman dilimi ayarı
+configure_timezone() {
+    log "Zaman dilimi ayarlanıyor..." "INFO"
+    arch-chroot /mnt ln -sf /usr/share/zoneinfo/Europe/Istanbul /etc/localtime
+    arch-chroot /mnt hwclock --systohc
+}
+
+# Chroot içinde locale ayarı
+configure_locale() {
+    log "Locale ayarlanıyor..." "INFO"
+    arch-chroot /mnt sed -i "s/^#\(tr_TR.UTF-8\)/\1/" /etc/locale.gen
+    arch-chroot /mnt sed -i "s/^#\(en_US.UTF-8\)/\1/" /etc/locale.gen
+    echo "LANG=tr_TR.UTF-8" > /etc/locale.conf
+    echo "LC_MESSAGES=en_US.UTF-8" >> /etc/locale.conf
+    echo "LC_ADDRESS=tr_TR.UTF-8" >> /etc/locale.conf
+    echo "LC_COLLATE=tr_TR.UTF-8" >> /etc/locale.conf
+    echo "LC_CTYPE=tr_TR.UTF-8" >> /etc/locale.conf
+    echo "LC_IDENTIFICATION=tr_TR.UTF-8" >> /etc/locale.conf
+    echo "LC_MEASUREMENT=tr_TR.UTF-8" >> /etc/locale.conf
+    echo "LC_MONETARY=tr_TR.UTF-8" >> /etc/locale.conf
+    echo "LC_NAME=tr_TR.UTF-8" >> /etc/locale.conf
+    echo "LC_NUMERIC=tr_TR.UTF-8" >> /etc/locale.conf
+    echo "LC_PAPER=tr_TR.UTF-8" >> /etc/locale.conf
+    echo "LC_TELEPHONE=tr_TR.UTF-8" >> /etc/locale.conf
+    echo "LC_TIME=tr_TR.UTF-8" >> /etc/locale.conf
+    echo "FONT=ter-v24n" > /etc/vconsole.conf
+    echo "KEYMAP=trq" >> /etc/vconsole.conf
+    arch-chroot /mnt locale-gen
+}
+
+# Chroot içinde varsayılan editör ayarı
+configure_editor() {
+    log "Varsayılan editör ayarlanıyor..." "INFO"
+    echo "EDITOR=nvim" > /mnt/etc/environment
+    echo "VISUAL=nvim" >> /mnt/etc/environment
+}
+
+# Chroot içinde servislerin etkinleştirilmesi
+enable_services() {
+    log "NetworkManager ve SSH sunucusu etkinleştiriliyor..." "INFO"
+    arch-chroot /mnt systemctl enable NetworkManager
+    arch-chroot /mnt systemctl enable sshd.service
+}
 
 configure_chroot() {
     log "Sisteme chroot ile giriliyor ve yapılandırma adımları gerçekleştiriliyor..." "INFO"
-    arch-chroot /mnt /bin/bash <<'EOF'
-# Zaman dilimi ayarlama
-ln -sf /usr/share/zoneinfo/Europe/Istanbul /etc/localtime
-hwclock --systohc
-
-# Konsol fontu ve klavye düzeni ayarlama
-echo "FONT=ter-v24n" > /etc/vconsole.conf
-echo "KEYMAP=trq" >> /etc/vconsole.conf
-
-# Locale ayarlama
-sed -i "s/^#\(tr_TR.UTF-8\)/\1/" /etc/locale.gen
-sed -i "s/^#\(en_US.UTF-8\)/\1/" /etc/locale.gen
-echo "LANG=tr_TR.UTF-8" > /etc/locale.conf
-echo "LC_MESSAGES=en_US.UTF-8" >> /etc/locale.conf
-echo "LC_ADDRESS=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_COLLATE=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_CTYPE=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_IDENTIFICATION=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_MEASUREMENT=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_MONETARY=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_NAME=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_NUMERIC=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_PAPER=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_TELEPHONE=tr_TR.UTF-8" >> /etc/locale.conf
-echo "LC_TIME=tr_TR.UTF-8" >> /etc/locale.conf
-locale-gen
-
-# Varsayılan editör ayarlama
-echo "EDITOR=nvim" > /etc/environment
-echo "VISUAL=nvim" >> /etc/environment
-
-# NetworkManager etkinleştirme
-systemctl enable NetworkManager
-
-# SSH sunucusu etkinleştirme
-systemctl enable sshd.service
-EOF
+    configure_timezone
+    configure_locale
+    configure_editor
+    enable_services
 
     if [ $? -eq 0 ]; then
         log "Chroot içi yapılandırma başarıyla tamamlandı." "INFO"
@@ -515,6 +492,7 @@ EOF
     # mkinitcpio ve GRUB yapılandırmasını ayrı bir fonksiyonda yapıyoruz.
     configure_mkinitcpio_and_grub
 }
+
 
 finalize_installation() {
     log "Chroot'tan çıkılıyor ve sistem yeniden başlatılıyor..." "INFO"
