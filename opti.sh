@@ -188,7 +188,7 @@ wipe_disk() {
 prompt_wipe_disk() {
     # Kullanıcının seçtiği diskin boyutunu belirleyin
     disk_size_bytes=$(lsblk -b -n -o SIZE "$disk")
-    disk_size_mb=$(awk "BEGIN {print $disk_size_bytes / 1024 / 1024}")  # MB'ye çevir
+    disk_size_mb=$(awk -v size_bytes="$disk_size_bytes" 'BEGIN {print size_bytes / 1024 / 1024}')  # MB'ye çevir
 
     # Yazma hızını otomatik olarak belirlemek için test yap
     log "Yazma hızı otomatik olarak belirleniyor..." "INFO"
@@ -208,14 +208,14 @@ prompt_wipe_disk() {
     rm -f "$test_file"
 
     # Toplam yazma süresi (saniye cinsinden)
-    total_time_seconds=$(awk "BEGIN {print $disk_size_mb / $writing_speed_mb_s}")
+    total_time_seconds=$(awk -v disk_mb="$disk_size_mb" -v speed_mb="$writing_speed_mb_s" 'BEGIN {print disk_mb / speed_mb}')
 
     # Saniyeyi dakikaya çevir ve tam sayı olarak göster
-    total_time_minutes=$(awk "BEGIN {print int($total_time_seconds / 60)}")
+    total_time_minutes=$(awk -v total_seconds="$total_time_seconds" 'BEGIN {print int(total_seconds / 60)}')
 
     # Toplam süreyi saat ve dakikaya dönüştürme
-    hours=$(awk "BEGIN {print int($total_time_minutes / 60)}")
-    minutes=$(awk "BEGIN {print $total_time_minutes % 60}")
+    hours=$(awk -v total_minutes="$total_time_minutes" 'BEGIN {print int(total_minutes / 60)}')
+    minutes=$(awk -v total_minutes="$total_time_minutes" 'BEGIN {print total_minutes % 60}')
 
     # Toplam süreyi bilgi olarak göster
     if [[ $hours -gt 0 ]]; then
@@ -233,6 +233,7 @@ prompt_wipe_disk() {
         log "Disk sıfırlama işlemi atlandı, diğer adımlara geçiliyor..." "INFO"
     fi
 }
+
 
 
 
