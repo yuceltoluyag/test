@@ -193,15 +193,15 @@ prompt_wipe_disk() {
     # Yazma hızını otomatik olarak belirlemek için test yap
     log "Yazma hızı otomatik olarak belirleniyor..." "INFO"
     test_file="/tmp/testfile"
-    dd_output=$(dd if=/dev/zero of="$test_file" bs=1M count=100 oflag=dsync 2>&1)
+    dd_output=$(dd if=/dev/zero of="$test_file" bs=1M count=100 conv=fdatasync 2>&1)
 
     if [[ $? -ne 0 ]]; then
         log "Yazma hızı testi sırasında bir hata oluştu: $dd_output" "ERROR"
         writing_speed_mb_s=33  # Varsayılan bir değere geri dönülüyor
         log "Varsayılan yazma hızı $writing_speed_mb_s MB/s olarak ayarlandı." "WARN"
     else
+        # Gerçek yazma hızını yakalamaya çalışalım
         writing_speed_mb_s=$(echo "$dd_output" | grep -oP '\d+\.\d+(?= MB/s)')
-        writing_speed_mb_s=${writing_speed_mb_s%.*}  # Ondalık kısmı sil
 
         # Eğer yazma hızı boşsa veya 0'sa, varsayılan değeri kullan
         if [[ -z "$writing_speed_mb_s" || "$writing_speed_mb_s" -eq 0 ]]; then
@@ -239,6 +239,7 @@ prompt_wipe_disk() {
         log "Disk sıfırlama işlemi atlandı, diğer adımlara geçiliyor..." "INFO"
     fi
 }
+
 
 
 
