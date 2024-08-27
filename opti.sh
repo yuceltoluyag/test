@@ -187,13 +187,13 @@ wipe_disk() {
 
 prompt_wipe_disk() {
     # Kullanıcının seçtiği diskin boyutunu belirleyin
-    disk_size_bytes=$(lsblk -b -n -o SIZE $disk)
-    disk_size_gb=$(echo "scale=2; $disk_size_bytes / (1024^3)" | bc)  # GB'ye çevir
+    disk_size_bytes=$(lsblk -b -n -o SIZE "$disk")
+    disk_size_mb=$((disk_size_bytes / 1024 / 1024))  # MB'ye çevir
 
     # Yazma hızını otomatik olarak belirlemek için test yap
     log "Yazma hızı otomatik olarak belirleniyor..." "INFO"
     test_file="/tmp/testfile"
-    dd_output=$(dd if=/dev/zero of=$test_file bs=1M count=100 oflag=dsync 2>&1)
+    dd_output=$(dd if=/dev/zero of="$test_file" bs=1M count=100 oflag=dsync 2>&1)
 
     if [[ $? -ne 0 ]]; then
         log "Yazma hızı testi sırasında bir hata oluştu: $dd_output" "ERROR"
@@ -201,25 +201,23 @@ prompt_wipe_disk() {
         log "Varsayılan yazma hızı $writing_speed_mb_s MB/s olarak ayarlandı." "WARN"
     else
         writing_speed_mb_s=$(echo "$dd_output" | grep -oP '\d+\.\d+(?= MB/s)')
+        writing_speed_mb_s=${writing_speed_mb_s%.*}  # Ondalık kısmı sil
     fi
 
     # Test dosyasını kaldır
-    rm -f $test_file
-
-    # Disk boyutunu MB cinsine çevir
-    disk_size_mb=$(echo "$disk_size_gb * 1024" | bc)
+    rm -f "$test_file"
 
     # Toplam yazma süresi (saniye cinsinden)
-    total_time_seconds=$(echo "$disk_size_mb / $writing_speed_mb_s" | bc)
+    total_time_seconds=$((disk_size_mb / writing_speed_mb_s))
 
     # Saniyeyi dakikaya çevir ve tam sayı olarak göster
-    total_time_minutes=$(echo "$total_time_seconds / 60" | bc)
+    total_time_minutes=$((total_time_seconds / 60))
 
     # Toplam süreyi saat ve dakikaya dönüştürme
-    hours=$(echo "$total_time_minutes / 60" | bc)
-    minutes=$(echo "$total_time_minutes % 60" | bc)
+    hours=$((total_time_minutes / 60))
+    minutes=$((total_time_minutes % 60))
 
-    # Sayısal format sorununu çözmek için double brackets kullanmadan işlem yapmak daha doğru olur.
+    # Toplam süreyi bilgi olarak göster
     if [[ $hours -gt 0 ]]; then
         log "Disk sıfırlama işlemi yaklaşık olarak $hours saat ve $minutes dakika sürecektir." "INFO"
     else
@@ -229,18 +227,12 @@ prompt_wipe_disk() {
     log "Bu işlem diskin tüm verilerini geri dönülemez bir şekilde siler." "WARN"
 
     read -p "Disk sıfırlama işlemini başlatmak istiyor musunuz? (y/N): " confirm
-    if [[ "$confirm" == [yY] ]]; then
+    if [[ "$confirm" =~ ^[yY]$ ]]; then
         wipe_disk
     else
         log "Disk sıfırlama işlemi atlandı, diğer adımlara geçiliyor..." "INFO"
     fi
 }
-
-
-
-
-
-
 
 configure_partitions() {
     log "Disk Sıfırlama İşlemi Başlatılıyor..." "INFO"
