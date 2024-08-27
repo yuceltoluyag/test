@@ -155,7 +155,6 @@ check_uefi_mode() {
     fi
 }
 
-# Disk silme (wipe) işlemi
 wipe_disk() {
     log "DİKKAT: $disk tamamen sıfırlanacak. Bu işlem geri alınamaz!" "WARN"
     read -p "Disk silme işlemine devam etmek istediğinizden emin misiniz? (y/N): " confirm
@@ -179,10 +178,15 @@ wipe_disk() {
 
     # Kullanıcıya işlem süresince iptal seçeneği sunuluyor
     (
-        dd if=/dev/zero of=/dev/mapper/wipe_me bs=1M count="$disk_size_mb" status=progress oflag=sync conv=fdatasync || {
-            log "Disk sıfırlama işlemi başarısız." "ERROR"
-            cryptsetup close wipe_me
-            exit 1
+        dd if=/dev/zero of=/dev/mapper/wipe_me bs=1M count="$disk_size_mb" status=progress oflag=sync conv=fdatasync | {
+            while IFS= read -r line; do
+                if [[ "$line" =~ bytes.*copied ]]; then
+                    copied=$(echo "$line" | grep -oP '\d+(?= bytes)')
+                    duration=$(echo "$line" | grep -oP '(?<=, )\d+(\.\d+)?(?= s)')
+                    speed=$(awk "BEGIN {print $copied / $duration / 1024 / 1024}")
+                    log "Mevcut yazma hızı: ${speed} MB/s" "INFO"
+                fi
+            done
         }
     ) &
 
@@ -193,6 +197,8 @@ wipe_disk() {
         if [[ "$key" == "q" ]]; then
             log "Disk sıfırlama işlemi iptal edildi, çıkılıyor..." "WARN"
             kill $! 2>/dev/null
+            sleep 2  # Cihazın serbest kalması için bekle
+            sync  # Tamamlanmamış işlemleri bekle
             cryptsetup close wipe_me || log "Geçici şifreleme konteyneri kapatılamadı." "ERROR"
             return
         fi
@@ -200,11 +206,23 @@ wipe_disk() {
 
     wait $!
 
-    # Konteyneri kapat
-    cryptsetup close wipe_me || log "Geçici şifreleme konteyneri kapatılamadı." "ERROR"
+    # Tamamlanmamış işlemleri bekle
+    sync
+    sleep 2
+
+    # Konteyneri kapatmayı dene
+    if ! cryptsetup close wipe_me; then
+        log "Geçici şifreleme konteyneri kapatılamadı, manuel olarak kapatılmaya çalışılıyor..." "ERROR"
+        if ! dmsetup remove wipe_me; then
+            log "Geçici şifreleme konteyneri manuel olarak kapatılamadı." "ERROR"
+            return
+        fi
+    fi
 
     log "Disk sıfırlama işlemi başarıyla tamamlandı." "INFO"
 }
+
+
 
 
 
