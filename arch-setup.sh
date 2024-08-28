@@ -43,7 +43,7 @@ virt_check() {
         kvm )   
             log "KVM tespit edildi, misafir araçları kuruluyor..." "INFO"
             pacstrap /mnt qemu-guest-agent &>/dev/null
-            systemctl enable qemu-guest-agent --root=/mnt &>/dev/null
+            systemctl enable qemu-guest-agent --root=/mnt &>/dev/null || log "qemu-guest-agent etkinleştirilemedi." "ERROR"
             ;;
         vmware )   
             log "VMWare Workstation/ESXi tespit edildi, misafir araçları kuruluyor..." "INFO"
@@ -86,7 +86,14 @@ setup_keyfile() {
 
 set_hostname() {
     local hostname
-    read -r -p "Lütfen hostname adını girin: " hostname
+    while true; do
+        read -r -p "Lütfen hostname adını girin: " hostname
+        if [[ -z "$hostname" ]]; then
+            log "Hostname boş olamaz. Lütfen geçerli bir hostname girin." "ERROR"
+        else
+            break
+        fi
+    done
     echo "$hostname" > /mnt/etc/hostname
     cat > /mnt/etc/hosts <<EOF
 127.0.0.1   localhost
@@ -113,7 +120,6 @@ select_keyboard_layout() {
         loadkeys trq || log "Varsayılan klavye düzeni yüklenemedi." "ERROR"
     fi
 }
-
 # UEFI mod kontrolü
 check_uefi_mode() {
     log "UEFI modda önyükleme kontrol ediliyor..." "INFO"
@@ -131,7 +137,6 @@ check_uefi_mode() {
         exit 1
     fi
 }
-
 setup_partitions() {
     if [[ "$disk" == *"nvme"* ]]; then
         part1="${disk}p1"
@@ -141,7 +146,6 @@ setup_partitions() {
         part2="${disk}2"
     fi
 }
-
 # Disk seçimi ve türüne göre partisyon ayarlama
 select_disk() {
     log "Kurulum için kullanılacak disk seçiliyor..." "INFO"
@@ -166,54 +170,99 @@ select_disk() {
         fi
     done
 }
-
 # Disk silme (wipe) işlemi
 wipe_disk() {
-    log "DİKKAT:$disk  tamamen sıfırlanacak. Bu işlem geri alınamaz!" "WARN"
+    log "DİKKAT: $disk tamamen sıfırlanacak. Bu işlem geri alınamaz!" "WARN"
     read -p "Disk silme işlemine devam etmek istediğinizden emin misiniz? (y/N): " confirm
     if [[ "$confirm" != [yY] ]]; then
         log "Disk silme işlemi iptal edildi." "INFO"
         return
     fi
 
+    disk_size_bytes=$(lsblk -b -n -o SIZE "$disk")
+    disk_size_mb=$(awk -v size_bytes="$disk_size_bytes" 'BEGIN {print int(size_bytes / 1024 / 1024 * 0.99)}')  # %99 güvenlik marjı
+    
+    log "Disk boyutu: $disk_size_mb MB" "INFO"
     log "Disk silme işlemi başlatılıyor..." "INFO"
 
-    # Geçici bir şifreleme konteyneri oluştur
-    cryptsetup open --type plain -d /dev/urandom $disk wipe_me || {
+    cryptsetup open --type plain -d /dev/urandom "$disk" wipe_me || {
         log "Geçici şifreleme konteyneri oluşturulamadı." "ERROR"
         exit 1
     }
 
-    # Konteyner üzerinde sıfırlama işlemi yap
-    dd bs=1M if=/dev/zero of=/dev/mapper/wipe_me status=progress || {
-        log "Disk sıfırlama işlemi başarısız." "ERROR"
-        cryptsetup close wipe_me
-        exit 1
-    }
+    (
+        dd if=/dev/zero of=/dev/mapper/wipe_me bs=1M count="$disk_size_mb" status=progress oflag=sync conv=fdatasync | {
+            while IFS= read -r line; do
+                if [[ "$line" =~ bytes.*copied ]]; then
+                    copied=$(echo "$line" | grep -oP '\d+(?= bytes)')
+                    duration=$(echo "$line" | grep -oP '(?<=, )\d+(\.\d+)?(?= s)')
+                    speed=$(awk "BEGIN {print $copied / $duration / 1024 / 1024}")
+                    log "Mevcut yazma hızı: ${speed} MB/s" "INFO"
+                fi
+            done
+        }
+    ) &
 
-    # Konteyneri kapat
-    cryptsetup close wipe_me || log "Geçici şifreleme konteyneri kapatılamadı." "ERROR"
+    log "Disk sıfırlama işlemi devam ediyor... İptal etmek için 'q' tuşuna basabilirsiniz." "INFO"
+    while kill -0 $! 2>/dev/null; do
+        read -t 1 -n 1 key
+        if [[ "$key" == "q" ]]; then
+            log "Disk sıfırlama işlemi iptal edildi, çıkılıyor..." "WARN"
+            kill $! 2>/dev/null
+            sync
+            sleep 2
+            cryptsetup close wipe_me || log "Geçici şifreleme konteyneri kapatılamadı." "ERROR"
+            return
+        fi
+    done
+
+    wait $!
+    sync
+    sleep 2
+
+    if ! cryptsetup close wipe_me; then
+        log "Geçici şifreleme konteyneri kapatılamadı, manuel olarak kapatılmaya çalışılıyor..." "ERROR"
+        if ! dmsetup remove wipe_me; then
+            log "Geçici şifreleme konteyneri manuel olarak kapatılamadı." "ERROR"
+            return
+        fi
+    fi
 
     log "Disk sıfırlama işlemi başarıyla tamamlandı." "INFO"
 }
+ask_for_wipe_disk() {
+    log "50 GB'lik bir Hard-disk, 61.9 MB/s hızla sıfırlanırken yaklaşık 13 dakika 28 saniye sürüyor." "INFO"
+    log "Eğer yazma hızınız düşükse ve sabırlı değilseniz, wipe_disk fonksiyonunun çalıştırılmasını tekrar düşünün." "WARN"
+    log "Bu işlem, diskteki tüm verileri geri alınamaz şekilde siler ve diskteki tüm mevcut bölümleri kaldırır." "WARN"
+    log "Bu işlemden sonra verilerin geri yüklenmesi mümkün değildir!" "ERROR"
 
-
+    read -p "Disk sıfırlama işlemini başlatmak istiyor musunuz? (y/N): " confirm
+    if [[ "$confirm" =~ ^[yY]$ ]]; then
+        wipe_disk
+    else
+        log "Disk sıfırlama işlemi atlandı, diğer adımlara geçiliyor..." "INFO"
+    fi
+}
 # Bölüm silme ve yeniden yapılandırma
 configure_partitions() {
-    log "Disk Sıfırlama İşlemi Başlatılıyor..." "INFO"
-    wipe_disk
+    log "Güvenli Disk Sıfırlama İşlemi Başlatılıyor..." "INFO"
+    ask_for_wipe_disk
     log "Eski bölüm düzeni siliniyor..." "INFO"
-    wipefs -af $disk && sgdisk --zap-all --clear $disk && partprobe $disk || log "Eski bölüm düzeni silinirken hata oluştu." "ERROR"
+    if ! (wipefs -af $disk && sgdisk --zap-all --clear $disk && partprobe $disk); then
+        log "Eski bölüm düzeni silinirken hata oluştu." "ERROR"
+        exit 1
+    fi
     
     log "Disk bölümlendiriliyor..." "INFO"
-    sgdisk -n 0:0:+512MiB -t 0:ef00 -c 0:esp $disk && \
-    sgdisk -n 0:0:0 -t 0:8309 -c 0:luks $disk && \
-    partprobe $disk || log "Disk bölümlendirme başarısız." "ERROR"
+    if ! (sgdisk -n 0:0:+512MiB -t 0:ef00 -c 0:esp $disk && sgdisk -n 0:0:0 -t 0:8309 -c 0:luks $disk && partprobe $disk); then
+        log "Disk bölümlendirme başarısız." "ERROR"
+        exit 1
+    fi
     sgdisk -p $disk
     log "Bölümler başarıyla oluşturuldu: EFI Bölümü -> $part1, Kök Bölümü -> $part2" "INFO"
 }
 
-# LUKS şifreleme ve dosya sistemlerini yapılandırma
+# Dosya sistemleri oluşturuluyor
 setup_filesystems() {
     log "Dosya sistemleri oluşturuluyor..." "INFO"
     log "${part2} bölümü LUKS1 ile şifreleniyor..." "INFO"
@@ -224,9 +273,10 @@ setup_filesystems() {
     log "EFI bölümü ($part1) FAT32 olarak formatlanıyor..." "INFO"
     mkfs.vfat -F32 -n ESP $part1 || log "ESP formatlama başarısız." "ERROR"
 
-    log "Kök bölümü (/dev/mapper/cryptroot) /mnt dizinine monte ediliyor..." "INFO"
+    log "Kök bölümü (/dev/mapper/cryptdev) /mnt dizinine monte ediliyor..." "INFO"
     mkfs.btrfs -L archlinux /dev/mapper/cryptdev || log "BTRFS formatlama başarısız." "ERROR"
 }
+
 
 # Alt birimlerin oluşturulması ve bağlanması
 setup_btrfs_subvolumes() {
@@ -255,13 +305,15 @@ setup_btrfs_subvolumes() {
 
     # Alt birimleri monte etme (swap hariç)
     log "Alt birimler monte ediliyor..." "INFO"
-    mount -o ${sv_opts},subvol=@home /dev/mapper/cryptroot /mnt/home || log "Home alt birimi monte edilemedi." "ERROR"
-    mount -o ${sv_opts},subvol=@snapshots /dev/mapper/cryptroot /mnt/.snapshots || log "Snapshots alt birimi monte edilemedi." "ERROR"
-    mount -o ${sv_opts},subvol=@cache /dev/mapper/cryptroot /mnt/var/cache || log "Cache alt birimi monte edilemedi." "ERROR"
+    mount -o ${sv_opts},subvol=@home /dev/mapper/cryptdev /mnt/home || log "Home alt birimi monte edilemedi." "ERROR"
+    mount -o ${sv_opts},subvol=@snapshots /dev/mapper/cryptdev /mnt/.snapshots || log "Snapshots alt birimi monte edilemedi." "ERROR"
+    mount -o ${sv_opts},subvol=@cache /dev/mapper/cryptdev /mnt/var/cache || log "Cache alt birimi monte edilemedi." "ERROR"
     mount -o ${sv_opts},subvol=@libvirt /dev/mapper/cryptdev /mnt/var/lib/libvirt || log "libvirt alt birimi monte edilemedi." "ERROR"
-    mount -o ${sv_opts},subvol=@log /dev/mapper/cryptroot /mnt/var/log || log "Log alt birimi monte edilemedi." "ERROR"
-    mount -o ${sv_opts},subvol=@tmp /dev/mapper/cryptroot /mnt/var/tmp || log "Tmp alt birimi monte edilemedi." "ERROR"
+    mount -o ${sv_opts},subvol=@log /dev/mapper/cryptdev /mnt/var/log || log "Log alt birimi monte edilemedi." "ERROR"
+    mount -o ${sv_opts},subvol=@tmp /dev/mapper/cryptdev /mnt/var/tmp || log "Tmp alt birimi monte edilemedi." "ERROR"
 
+
+}  
 # ESP bölümü monte etme
 mount_esp() {
     log "EFI bölümü (${part1}) /mnt/efi dizinine monte ediliyor..." "INFO"
@@ -304,9 +356,6 @@ configure_system() {
 
     log "fstab dosyası oluşturuluyor..." "INFO"
     genfstab -U -p /mnt >> /mnt/etc/fstab || log "fstab oluşturma başarısız." "ERROR"
-
-    log "fstab dosyasından 'subvolid' girdileri kaldırılıyor ve 'subvol=' ile güncelleniyor..." "INFO"
-    sed -i 's/subvolid=[0-9]*,/subvol=/g' /mnt/etc/fstab || log "fstab dosyası güncellenemedi." "ERROR"
 
     log "fstab dosyası kontrol ediliyor..." "INFO"
     cat /mnt/etc/fstab
@@ -361,59 +410,20 @@ check_mounts_before_chroot() {
     fi
 }
 
-configure_mkinitcpio_and_grub() {
-    log "mkinitcpio ve GRUB yapılandırması başlatılıyor..." "INFO"
-    
-    # UUID'yi alıyoruz
-    uuid=$(arch-chroot /mnt blkid -s UUID -o value $part2)
+
+
+# Chroot içindeki yapılandırma
+configure_chroot() {
+    log "Sisteme chroot ile giriliyor ve yapılandırma adımları gerçekleştiriliyor..." "INFO"
+
+    # UUID'yi dışarıda alın
+    uuid=$(blkid -s UUID -o value $part2)
     if [ -z "$uuid" ]; then
         log "UUID alınamadı, kurulum iptal ediliyor." "ERROR"
         exit 1
     fi
 
-    arch-chroot /mnt /bin/bash -c "
-    # mkinitcpio yapılandırması
-    sed -i 's/^FILES=()/FILES=(\/crypto_keyfile.bin)/' /etc/mkinitcpio.conf
-    sed -i 's/^MODULES=.*/MODULES=(btrfs crc32c-intel)/' /etc/mkinitcpio.conf
-    sed -i 's/^HOOKS=.*/HOOKS=(base udev keyboard autodetect keymap modconf microcode consolefont block encrypt resume filesystems fsck)/' /etc/mkinitcpio.conf
-
-    # mkinitcpio güncellemesi
-    if ! mkinitcpio -P; then
-        echo 'mkinitcpio güncellemesi başarısız.' >&2
-        exit 1
-    fi
-
-    # GRUB yapılandırma
-    sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=\"loglevel=3 quiet cryptdevice=UUID=$uuid:cryptdev\"/' /etc/default/grub
-    sed -i 's/^#GRUB_PRELOAD_MODULES=.*/GRUB_PRELOAD_MODULES=\"part_gpt part_msdos luks\"/' /etc/default/grub
-    sed -i 's/^#GRUB_ENABLE_CRYPTODISK=.*/GRUB_ENABLE_CRYPTODISK=y/' /etc/default/grub
-    
-
-    # GRUB kurulumu ve yapılandırması
-    grub-install --target=x86_64-efi --efi-directory=/efi --boot-directory=/efi --removable --bootloader-id=GRUB
-    if [ \$? -ne 0 ]; then
-        echo 'GRUB kurulumu başarısız oldu.' >&2
-        exit 1
-    fi
-    grub-mkconfig -o /efi/grub/grub.cfg
-    if [ \$? -ne 0 ]; then
-        echo 'GRUB yapılandırması başarısız oldu.' >&2
-        exit 1
-    fi
-    "
-
-    if [ $? -ne 0 ]; then
-        log "mkinitcpio veya GRUB yapılandırmasında bir hata oluştu." "ERROR"
-        exit 1
-    fi
-
-    log "mkinitcpio ve GRUB başarıyla yapılandırıldı." "INFO"
-}
-
-# Chroot içindeki yapılandırma
-configure_chroot() {
-    log "Sisteme chroot ile giriliyor ve yapılandırma adımları gerçekleştiriliyor..." "INFO"
-    arch-chroot /mnt /bin/bash <<'EOF'
+    arch-chroot /mnt /bin/bash -e <<EOF
 # Zaman dilimi ayarlama
 ln -sf /usr/share/zoneinfo/Europe/Istanbul /etc/localtime
 hwclock --systohc
@@ -449,17 +459,46 @@ systemctl enable NetworkManager
 
 # SSH sunucusu etkinleştirme
 systemctl enable sshd.service
+
+# mkinitcpio yapılandırması
+sed -i 's/^FILES=()/FILES=(\/crypto_keyfile.bin)/' /etc/mkinitcpio.conf
+sed -i 's/^MODULES=.*/MODULES=(btrfs crc32c-intel)/' /etc/mkinitcpio.conf
+sed -i 's/^HOOKS=.*/HOOKS=(base udev keyboard kms autodetect keymap modconf microcode consolefont block encrypt resume filesystems fsck)/' /etc/mkinitcpio.conf
+
+# mkinitcpio güncellemesi
+if ! mkinitcpio -P; then
+    echo 'mkinitcpio güncellemesi başarısız.' >&2
+    exit 1
+fi
+
+# GRUB yapılandırma
+sed -i 's/^GRUB_CMDLINE_LINUX_DEFAULT=.*/GRUB_CMDLINE_LINUX_DEFAULT=\"loglevel=3 quiet cryptdevice=UUID=$uuid:cryptdev\"/' /etc/default/grub
+sed -i 's/^#GRUB_PRELOAD_MODULES=.*/GRUB_PRELOAD_MODULES=\"part_gpt part_msdos luks\"/' /etc/default/grub
+sed -i 's/^#GRUB_ENABLE_CRYPTODISK=.*/GRUB_ENABLE_CRYPTODISK=y/' /etc/default/grub
+
+# GRUB kurulumu ve yapılandırması
+grub-install --target=x86_64-efi --efi-directory=/efi --boot-directory=/efi --removable --bootloader-id=GRUB
+if [ \$? -ne 0 ]; then
+    echo 'GRUB kurulumu başarısız oldu. EFI dizinini ve disk yapısını kontrol edin.' >&2
+    exit 1
+fi
+
+grub-mkconfig -o /efi/grub/grub.cfg
+if [ \$? -ne 0 ]; then
+    echo 'GRUB yapılandırması başarısız oldu. Konfigürasyon dosyasını kontrol edin.' >&2
+    exit 1
+fi
+
 EOF
 
-    if [ $? -eq 0 ]; then
-        log "Chroot içi yapılandırma başarıyla tamamlandı." "INFO"
-    else
-        log "Chroot içi yapılandırmada bir hata oluştu." "ERROR"
+    if [ $? -ne 0 ]; then
+        log "mkinitcpio veya GRUB yapılandırmasında bir hata oluştu." "ERROR"
+        exit 1
     fi
 
-    # mkinitcpio ve GRUB yapılandırmasını ayrı bir fonksiyonda yapıyoruz.
-    configure_mkinitcpio_and_grub
+    log "mkinitcpio ve GRUB başarıyla yapılandırıldı." "INFO"
 }
+
 
 rotate_logs() {
     if [ -f "$LOG_FILE" ]; then
@@ -479,7 +518,7 @@ finalize_installation() {
     log "Klasör içeriği /mnt/home/$username/test dizinine başarıyla kopyalandı." "INFO"
 
     # Dosya sahipliğini hedef kullanıcıya geçiriyoruz
-    chown -R $username:$username /mnt/home/$username/test
+    chown -R $username /mnt/home/$username/test
     log "Kopyalanan dosyaların sahipliği $username kullanıcısına geçirildi." "INFO"
 
     # Diskleri unmount etme
