@@ -146,17 +146,18 @@ setup_partitions() {
         part2="${disk}2"
     fi
 }
-# Disk seçimi ve türüne göre partisyon ayarlama
 select_disk() {
     log "Kurulum için kullanılacak disk seçiliyor..." "INFO"
     
     # Kullanılabilir diskleri listeleme
-    PS3="Lütfen kurulumu yapacağınız diskin numarasını seçin (örn: 1, 2, 3): "
-    disks=$(lsblk -dpnoNAME,SIZE,MODEL | grep -P "/dev/sd|/dev/nvme|/dev/vd")
+    disks=$(lsblk -dpno NAME,SIZE,MODEL | grep -P "/dev/sd|/dev/nvme|/dev/vd")
 
-    select disk in $disks; do
+    # Disk listesini kullanıcıya seçenek olarak göster
+    PS3="Lütfen kurulumu yapacağınız diskin numarasını seçin (örn: 1, 2, 3): "
+    select disk in $(echo "$disks" | awk '{print $1}'); do
         if [ -n "$disk" ]; then
             log "Kurulum için seçilen disk: $disk" "INFO"
+            echo "$disks" | grep "$disk"  # Seçilen diskin detaylarını göster
             read -p "Lütfen seçiminizi onaylayın (y/N): " confirm
             if [[ "$confirm" =~ ^[yY]$ ]]; then
                 export disk
@@ -295,7 +296,7 @@ setup_btrfs_subvolumes() {
     log "Kök bölümü unmount ediliyor..." "INFO"
     umount /mnt || log "Kök bölümü unmount edilemedi." "ERROR"
 
-    export sv_opts="ssd,rw,noatime,compress-force=zstd:1,space_cache=v2,discard=async"
+    export sv_opts="ssd,rw,noatime,compress-force=zstd:6,space_cache=v2,discard=async"
 
     log "Kök alt birimi (subvol=@) monte ediliyor..." "INFO"
     mount -o ${sv_opts},subvol=@ /dev/mapper/cryptdev /mnt || log "Kök alt birimi monte edilemedi." "ERROR"
@@ -352,7 +353,7 @@ configure_system() {
     fi
 
     log "Temel sistem yükleniyor..." "INFO"
-    pacstrap /mnt --needed base base-devel linux linux-headers linux-firmware $microcode btrfs-progs grub efibootmgr vim networkmanager gvfs exfatprogs dosfstools e2fsprogs man-db man-pages texinfo openssh git reflector wget cryptsetup wpa_supplicant terminus-font bash-completion htop mlocate neovim pacman-contrib pkgfile sudo tmux || log "Temel sistem kurulumu başarısız." "ERROR"
+    pacstrap -K /mnt --needed base base-devel linux linux-headers linux-firmware $microcode btrfs-progs grub efibootmgr vim networkmanager gvfs exfatprogs dosfstools e2fsprogs man-db man-pages texinfo openssh git reflector wget cryptsetup wpa_supplicant terminus-font bash-completion htop mlocate neovim pacman-contrib pkgfile sudo tmux || log "Temel sistem kurulumu başarısız." "ERROR"
 
     log "fstab dosyası oluşturuluyor..." "INFO"
     genfstab -U -p /mnt >> /mnt/etc/fstab || log "fstab oluşturma başarısız." "ERROR"
@@ -369,11 +370,14 @@ set_user_and_password() {
     local retry_limit=3
     local attempts=0
 
+    # Kullanıcı var mı kontrolü
     if arch-chroot /mnt id -u "$user" >/dev/null 2>&1; then
         log "Kullanıcı $user zaten mevcut. Şifresi güncellenecek." "INFO"
     else
         arch-chroot /mnt useradd -m -G wheel -s /bin/bash "$user" || log "Kullanıcı $user oluşturulamadı." "ERROR"
     fi
+
+    # Şifreyi güvenli şekilde alma ve doğrulama
     while true; do
         read -r -s -p "$user için bir şifre belirleyin: " pass
         echo
@@ -381,6 +385,7 @@ set_user_and_password() {
         echo
         if [ "$pass" == "$pass_confirm" ]; then
             if echo "$user:$pass" | arch-chroot /mnt chpasswd; then
+                log "Kullanıcı $user için şifre başarıyla ayarlandı." "INFO"
                 break
             else
                 log "Şifre belirlenirken bir hata oluştu. Tekrar deneyin." "ERROR"
@@ -395,8 +400,12 @@ set_user_and_password() {
         fi
     done
 
-    # Sudoers dosyasını düzenleme (visudo yerine doğrudan sed kullanımı)
+    # Sudoers dosyasını düzenleme (NOPASSWD yetkisi geçici olarak veriliyor)
     arch-chroot /mnt sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers || log "sudoers dosyası güncellenemedi." "ERROR"
+    echo "$user ALL=(ALL) NOPASSWD:ALL" >> "/mnt/etc/sudoers"
+    # Geçici NOPASSWD yetkisini kaldırma
+    arch-chroot /mnt sed -i "/^$user ALL=(ALL) NOPASSWD:ALL$/d" /mnt/etc/sudoers
+    log "Kullanıcı $user için geçici NOPASSWD yetkisi kaldırıldı." "INFO"
 }
 
 # Chroot işlemi öncesi kontrol
@@ -501,14 +510,20 @@ EOF
 
 
 rotate_logs() {
-    if [ -f "$LOG_FILE" ]; then
-        if [ $(stat -c%s "$LOG_FILE") -ge 1048576 ]; then
+    if [ -f "$LOG_FILE" ]; then  # Log dosyasının varlığını kontrol et
+        if [ $(stat -c%s "$LOG_FILE") -ge 1048576 ]; then  # Dosya boyutunu kontrol et
             mv "$LOG_FILE" "$LOG_FILE.$(date +%F-%T)"
             touch "$LOG_FILE"
+            chmod 600 "$LOG_FILE"  # Log dosyası izinlerini ayarla
             log "Log dosyası döndürüldü." "INFO"
         fi
+    else
+        touch "$LOG_FILE"  # Log dosyası yoksa oluştur
+        chmod 600 "$LOG_FILE"  # Log dosyası izinlerini ayarla
+        log "Yeni log dosyası oluşturuldu." "INFO"
     fi
 }
+
 
 # Chroot'tan çıkış ve sistemin yeniden başlatılması
 finalize_installation() {
@@ -520,6 +535,10 @@ finalize_installation() {
     # Dosya sahipliğini hedef kullanıcıya geçiriyoruz
     chown -R $username /mnt/home/$username/test
     log "Kopyalanan dosyaların sahipliği $username kullanıcısına geçirildi." "INFO"
+    log "Kurulum tamamlandı. Log dosyasını görüntülüyorsunuz..." "INFO"
+    less "$LOG_FILE"
+    log "Kurulum tamamlandı! Sistem yeniden başlatılıyor..." "INFO"
+
 
     # Diskleri unmount etme
     # umount -R /mnt || log "Unmount işlemi sırasında hata oluştu." "ERROR"
