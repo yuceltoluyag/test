@@ -31,7 +31,7 @@ log() {
 install_font() {
     log "Terminus fontu yükleniyor..." "INFO"
     if ! pacman -Qi terminus-font > /dev/null; then
-        pacman -Sy --noconfirm terminus-font || log "Terminus font kurulumu başarısız." "ERROR"
+        pacman -Syy --noconfirm terminus-font || log "Terminus font kurulumu başarısız." "ERROR"
     fi
     setfont ter-v24n || log "Font ayarlanamadı." "ERROR"
 }
@@ -199,9 +199,10 @@ wipe_disk() {
                     duration=$(echo "$line" | grep -oP '(?<=, )\d+(\.\d+)?(?= s)')
                     speed=$(awk "BEGIN {print $copied / $duration / 1024 / 1024}")
                     log "Mevcut yazma hızı: ${speed} MB/s" "INFO"
+                    log "Toplam yazılan veri: ${copied} bytes" "INFO"  # Toplam yazılan veri miktarını göster
                 fi
             done
-        }
+}
     ) &
 
     log "Disk sıfırlama işlemi devam ediyor... İptal etmek için 'q' tuşuna basabilirsiniz." "INFO"
@@ -399,10 +400,15 @@ set_user_and_password() {
             exit 1
         fi
     done
-
+    # /mnt/etc/sudoers dosyasının mevcut olup olmadığını kontrol et
+    if [ ! -f /mnt/etc/sudoers ]; then
+        log "/mnt/etc/sudoers dosyası bulunamadı. sudo paketini yeniden yüklüyoruz..." "WARN"
+        arch-chroot /mnt pacman -Syy --noconfirm sudo || log "Sudo paketi yüklenemedi." "ERROR"
+    fi
     # Sudoers dosyasını düzenleme (NOPASSWD yetkisi geçici olarak veriliyor)
     arch-chroot /mnt sed -i 's/^# %wheel ALL=(ALL:ALL) ALL/%wheel ALL=(ALL:ALL) ALL/' /etc/sudoers || log "sudoers dosyası güncellenemedi." "ERROR"
-    echo "$user ALL=(ALL) NOPASSWD:ALL" >> "/mnt/etc/sudoers"
+    log "Sudoers dosyası yeniden oluşturuluyor..." "INFO"
+    arch-chroot /mnt bash -c 'echo "%wheel ALL=(ALL) ALL" > /etc/sudoers'
     # Geçici NOPASSWD yetkisini kaldırma
     arch-chroot /mnt sed -i "/^$user ALL=(ALL) NOPASSWD:ALL$/d" /mnt/etc/sudoers
     log "Kullanıcı $user için geçici NOPASSWD yetkisi kaldırıldı." "INFO"
@@ -533,7 +539,7 @@ finalize_installation() {
     log "Klasör içeriği /mnt/home/$username/test dizinine başarıyla kopyalandı." "INFO"
 
     # Dosya sahipliğini hedef kullanıcıya geçiriyoruz
-    chown -R $username /mnt/home/$username/test
+    arch-chroot /mnt chown -R $username:$username /home/$username/test
     log "Kopyalanan dosyaların sahipliği $username kullanıcısına geçirildi." "INFO"
     log "Kurulum tamamlandı. Log dosyasını görüntülüyorsunuz..." "INFO"
     less "$LOG_FILE"
