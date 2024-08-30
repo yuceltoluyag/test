@@ -108,13 +108,13 @@ enable_services() {
 # Paketlerin listesi
 packages=(
     dbus intel-ucode fuse2 lshw powertop inxi acpi base-devel git lazygit rustup clang ipython zip unzip debootstrap usbutils htop btop iotop nano lsof wezterm  libnotify  brightnessctl gammastep nftables playerctl  usbguard  tree man-pages gdb mc zathura strace w3m dialog reflector bash-completion arandr iw apparmor firejail xdg-dbus-proxy polkit restic audit fwupd gparted gptfdisk dosfstools efibootmgr efitools edk2-shell iwd iptables-nft zathura-pdf-poppler mpv imagemagick zsh dash ripgrep bat most p7zip plymouth plymouth-theme-colorful-loop-git docker docker-compose qemu-full virt-manager keepassxc
-    wpa_supplicant tcpdump mtr net-tools conntrack-tools ethtool wget dnsmasq glider rsync socat openbsd-netcat axel sof-firmware ttf-impallari-cabin-font ttf-ms-fonts glow ttf-jetbrains-mono exa bc jq most bat neovim vi man screen asciinema expect arch-audit whois stress iotop ncdu nethogs openssh dbus-broker  sshpass keychain bind-tools cronie at borgbackup borgmatic pwgen lsd rclone syncthing vdirsyncer khal khard words fzf neofetch cifs-utils shellcheck oath-toolkit python-pip dmidecode python-pre-commit man-db zim mailutils python-pipx
+    wpa_supplicant tcpdump mtr net-tools conntrack-tools ethtool wget dnsmasq glider rsync socat openbsd-netcat axel sof-firmware ttf-impallari-cabin-font ttf-ms-fonts glow ttf-jetbrains-mono exa bc jq most bat neovim vi man screen asciinema expect arch-audit whois stress iotop ncdu nethogs openssh dbus-broker  sshpass keychain bind-tools cronie at borgbackup borgmatic pwgen lsd rclone syncthing vdirsyncer khal khard words fzf neofetch cifs-utils shellcheck oath-toolkit python-pip dmidecode python-pre-commit man-db zim mailutils python-pipx inotify-tools
     xorg-server xorg-apps xorg-xinit xterm xdotool xclip xsel ttf-dejavu ttf-freefont ttf-liberation ttf-droid terminus-font noto-fonts noto-fonts-emoji ttf-ubuntu-font-family ttf-roboto bluez bluez-utils blueman nm-connection-editor networkmanager-openvpn python-poetry fail2ban lightdm lightdm-gtk-greeter accountsservice-git  ttyd dool nmap pipewire pipewire-audio pipewire-alsa pipewire-pulse pipewire-jack wireplumber alsa-utils dmenu rofi alacritty i3-wm i3lock i3blocks i3status imwheel scrot i3ipc-python-git network-manager-applet ranger ffmpegthumbnailer firefox lxappearance feh sxiv dunst btrfs-assistant  btrfs-progs linux-lts linux-lts-headers
 )
 
 configure_snapper() {
     print_message "Snapper ve snap-pac kuruluyor..."
-    install_packages snapper snap-pac plymouth
+    install_packages snapper snap-pac plymouth grub-btrfs inotify-tools
 
     # Snapper config dosyasının var olup olmadığını kontrol ediyoruz
     if sudo snapper -c root list-configs | grep -q 'root'; then
@@ -150,16 +150,27 @@ configure_snapper() {
         sudo sed -i 's/^TIMELINE_LIMIT_MONTHLY=.*/TIMELINE_LIMIT_MONTHLY="0"/' /etc/snapper/configs/root
         sudo sed -i 's/^TIMELINE_LIMIT_YEARLY=.*/TIMELINE_LIMIT_YEARLY="0"/' /etc/snapper/configs/root
 
-        sudo systemctl enable --now snapper-timeline.timer
-        sudo systemctl enable --now snapper-cleanup.timer
+        enable_services snapper-timeline.timer
+        enable_services snapper-cleanup.timer
     fi
+    enable_service grub-btrfsd.service
+    # .snapshots dizinini PRUNENAMES'e ekleyin
+    if ! grep -q ".snapshots" /etc/updatedb.conf; then
+        sudo sed -i 's/^PRUNENAMES.*/& .snapshots/' /etc/updatedb.conf
+        print_message "updatedb.conf dosyasına .snapshots eklendi." "success"
+    else
+        print_message "updatedb.conf dosyasında .snapshots zaten mevcut." "success"
+    fi
+    # GRUB_BTRFS_GRUB_DIRNAME ve GRUB_BTRFS_BOOT_DIRNAME ayarlarını güncelleme
+    sudo sed -i 's|^#GRUB_BTRFS_GRUB_DIRNAME=.*|GRUB_BTRFS_GRUB_DIRNAME="/efi/grub"|' /etc/default/grub-btrfs/config
+    sudo sed -i 's|^#GRUB_BTRFS_BOOT_DIRNAME=.*|GRUB_BTRFS_BOOT_DIRNAME="/efi"|' /etc/default/grub-btrfs/config
 }
 
 
 # SSD için TRIM zamanlayıcısı etkinleştirme fonksiyonu
 enable_trim() {
     print_message "SSD için TRIM zamanlayıcısı etkinleştiriliyor..." "warning"
-    sudo systemctl enable --now fstrim.timer
+    enable_service fstrim.timer
 }
 
 # Font rendering yapılandırma fonksiyonu
@@ -236,7 +247,7 @@ RemainAfterExit=yes
 WantedBy=multi-user.target
 EOL
 
-        sudo systemctl enable --now zram-swap.service
+        enable_service zram-swap.service
     else
         print_message "Zram zaten etkin, yapılandırma atlanıyor." "success"
     fi
@@ -347,8 +358,9 @@ configure_autologin() {
         sudo mkdir -p /etc/systemd/system/getty@tty1.service.d/
         sudo tee "$autologin_conf" > /dev/null <<EOL
 [Service]
+Type=simple
 ExecStart=
-ExecStart=-/sbin/agetty --autologin $CURRENT_USER --noclear %I \$TERM
+ExecStart=-/sbin/agetty -o '-p -f -- \\\\u' --skip-login --nonewline --noissue --noclear --autologin $CURRENT_USER %I \$TERM
 EOL
         sudo systemctl daemon-reload
         print_message "Otomatik oturum açma yapılandırması tamamlandı." "success"
@@ -356,6 +368,7 @@ EOL
         print_message "Otomatik oturum açma yapılandırması zaten mevcut, işlem atlandı." "success"
     fi
 }
+
 
 configure_system_post_install(){
 
@@ -431,35 +444,25 @@ configure_system_services() {
     else
         print_message "Plymouth hook'u zaten mevcut." "success"
     fi
+    # Check if grub-btrfs-overlayfs is already in the HOOKS
+    if ! grep -q "grub-btrfs-overlayfs" /etc/mkinitcpio.conf; then
+        sudo sed -i 's/HOOKS=(\(.*\))/HOOKS=(\1 grub-btrfs-overlayfs)/' /etc/mkinitcpio.conf
+        print_message "grub-btrfs-overlayfs hook'u mkinitcpio'ya eklendi.." "success"
+    else
+        print_message "grub-btrfs-overlayfs hook'u zaten mevcut.." "success"
+    fi
 
     # Setup firejail
     sudo /usr/bin/firecfg
-
     # Configure systemd services
-    sudo systemctl enable systemd-networkd
-    sudo systemctl enable systemd-resolved
-    sudo systemctl enable systemd-timesyncd
-    sudo systemctl enable getty@tty1
-    sudo systemctl enable dbus-broker
-    sudo systemctl enable iwd
-    sudo systemctl enable auditd
-    sudo systemctl enable nftables
-    sudo systemctl enable docker
-    sudo systemctl enable libvirtd
-    sudo systemctl enable check-secure-boot
-    sudo systemctl enable apparmor
-    sudo systemctl enable auditd-notify
-    sudo systemctl enable local-forwarding-proxy
+    enable_services systemd-networkd systemd-resolved systemd-timesyncd getty@tty1 \
+                    dbus-broker iwd auditd nftables docker libvirtd check-secure-boot \
+                    apparmor auditd-notify local-forwarding-proxy
 
     # Configure systemd timers
-    sudo systemctl enable snapper-timeline.timer
-    sudo systemctl enable snapper-cleanup.timer
-    sudo systemctl enable auditor.timer
-    sudo systemctl enable btrfs-scrub@-.timer
-    sudo systemctl enable btrfs-balance.timer
-    sudo systemctl enable pacman-sync.timer
-    sudo systemctl enable pacman-notify.timer
-    sudo systemctl enable should-reboot-check.timer
+    enable_services snapper-timeline.timer snapper-cleanup.timer auditor.timer \
+                    btrfs-scrub@-.timer btrfs-balance.timer pacman-sync.timer \
+                    pacman-notify.timer should-reboot-check.timer
 
     # Configure systemd user services
     sudo systemctl --global enable dbus-broker
@@ -492,6 +495,6 @@ enable_services bluetooth fail2ban
 if ! grep -Fxq "exec i3" "$HOME/.xinitrc"; then
     echo "exec i3" >> "$HOME/.xinitrc"
 fi
-enable_services lightdm
+enable_service lightdm
 print_message "Tüm işlemler başarıyla tamamlandı." "success"
 
