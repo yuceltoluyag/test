@@ -349,31 +349,12 @@ EOF
     print_message "Paket senkronizasyonu tamamlandı." "success"
 }
 
-# Patch placeholders from config files
-configure_autologin() {
-    local autologin_conf="/etc/systemd/system/getty@tty1.service.d/autologin.conf"
-    
-    if [ ! -f "$autologin_conf" ]; then
-        print_message "TTY1 için otomatik oturum açma yapılandırılıyor..." "warning"
-        sudo mkdir -p /etc/systemd/system/getty@tty1.service.d/
-        sudo tee "$autologin_conf" > /dev/null <<EOL
-[Service]
-Type=simple
-ExecStart=
-ExecStart=-/sbin/agetty -o '-p -f -- \\\\u' --skip-login --nonewline --noissue --noclear --autologin $CURRENT_USER %I \$TERM
-EOL
-        sudo systemctl daemon-reload
-        print_message "Otomatik oturum açma yapılandırması tamamlandı." "success"
-    else
-        print_message "Otomatik oturum açma yapılandırması zaten mevcut, işlem atlandı." "success"
-    fi
-}
+
 
 
 configure_system_post_install(){
 
     # Patch placeholders from config files
-    configure_autologin
     sudo sed -i "s/^user = .*/user = \"$CURRENT_USER\"/" /etc/libvirt/qemu.conf
 
     

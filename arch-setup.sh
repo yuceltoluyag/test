@@ -410,8 +410,8 @@ set_user_and_password() {
     log "Sudoers dosyası yeniden oluşturuluyor..." "INFO"
     arch-chroot /mnt bash -c 'echo "%wheel ALL=(ALL) ALL" > /etc/sudoers'
     # Geçici NOPASSWD yetkisini kaldırma
-    arch-chroot /mnt sed -i "/^$user ALL=(ALL) NOPASSWD:ALL$/d" /mnt/etc/sudoers
-    log "Kullanıcı $user için geçici NOPASSWD yetkisi kaldırıldı." "INFO"
+    #arch-chroot /mnt sed -i "/^$user ALL=(ALL) NOPASSWD:ALL$/d" /mnt/etc/sudoers
+    #log "Kullanıcı $user için geçici NOPASSWD yetkisi kaldırıldı." "INFO"
 }
 
 # Chroot işlemi öncesi kontrol
